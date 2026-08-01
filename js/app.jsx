@@ -1,39 +1,50 @@
-// Zerodha & Coin Portfolio Intelligence React Dashboard
-const { useState, useEffect, useMemo, useRef } = React;
+// Zerodha & Coin Portfolio Intelligence React Dashboard (Connected to Microservices API Gateway)
+const { useState, useEffect, useMemo } = React;
+
+const GATEWAY_URL = 'http://localhost:5000';
 
 function App() {
-  // Load initial holdings from localStorage or fallback to sample data
   const [holdings, setHoldings] = useState(() => {
     const saved = localStorage.getItem('zerodha_portfolio_data');
     if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error("Error parsing saved portfolio", e);
-      }
+      try { return JSON.parse(saved); } catch (e) {}
     }
     return window.SAMPLE_HOLDINGS || [];
   });
 
-  const [activeTab, setActiveTab] = useState('holdings'); // 'holdings', 'losses', 'reinvest', 'guide'
+  const [activeTab, setActiveTab] = useState('holdings');
   const [searchQuery, setSearchQuery] = useState('');
-  const [assetFilter, setAssetFilter] = useState('ALL'); // 'ALL', 'Stock', 'Mutual Fund'
+  const [assetFilter, setAssetFilter] = useState('ALL');
   const [sectorFilter, setSectorFilter] = useState('ALL');
   const [isUploaderOpen, setIsUploaderOpen] = useState(false);
-  const [reinvestSubTab, setReinvestSubTab] = useState('shortTerm'); // 'shortTerm', 'longTerm', 'avgDown', 'sectorGaps'
+  const [reinvestSubTab, setReinvestSubTab] = useState('shortTerm');
   const [notification, setNotification] = useState(null);
+  const [gatewayStatus, setGatewayStatus] = useState('CHECKING');
 
-  // Save to localStorage on change
   useEffect(() => {
     localStorage.setItem('zerodha_portfolio_data', JSON.stringify(holdings));
   }, [holdings]);
+
+  // Check Microservices API Gateway Health
+  useEffect(() => {
+    fetch(`${GATEWAY_URL}/api/health`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.gateway && data.gateway.status === 'UP') {
+          setGatewayStatus('ONLINE');
+        } else {
+          setGatewayStatus('OFFLINE');
+        }
+      })
+      .catch(() => setGatewayStatus('OFFLINE'));
+  }, []);
 
   const showNotification = (msg, type = 'success') => {
     setNotification({ msg, type });
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Analytics Engine Outputs
+  // Analytics Engine Outputs (Local fallback or Gateway API)
   const summary = useMemo(() => {
     return window.PortfolioAnalytics.calculateSummary(holdings);
   }, [holdings]);
@@ -67,59 +78,72 @@ function App() {
     }
   };
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    // First try Parser Microservice via API Gateway
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`${GATEWAY_URL}/api/parse`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.data && result.data.length > 0) {
+          setHoldings(result.data);
+          setIsUploaderOpen(false);
+          showNotification(`[Parser Microservice] Imported ${result.data.length} holdings (${result.kiteCount} Stocks, ${result.coinCount} MFs)!`);
+          return;
+        }
+      }
+    } catch (err) {
+      console.log("Microservice offline, falling back to client-side parsing...", err);
+    }
+
+    // Client-side fallback if gateway offline
     const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
 
     if (isExcel) {
       const reader = new FileReader();
       reader.onload = function(evt) {
         try {
-          const arrayBuffer = evt.target.result;
-          const parsed = window.PortfolioCSVParser.parseExcelArrayBuffer(arrayBuffer);
+          const parsed = window.PortfolioCSVParser.parseExcelArrayBuffer(evt.target.result);
           if (parsed.holdings && parsed.holdings.length > 0) {
             setHoldings(parsed.holdings);
             setIsUploaderOpen(false);
-            showNotification(`Successfully imported ${parsed.holdings.length} holdings from Excel file (${parsed.kiteCount} Stocks, ${parsed.coinCount} MFs)!`);
+            showNotification(`Successfully imported ${parsed.holdings.length} holdings from Excel file!`);
           } else {
             alert("No valid holdings detected in Excel file.");
           }
-        } catch (err) {
-          alert("Excel Parsing Error: " + err.message);
-        }
+        } catch (err) { alert("Excel Parsing Error: " + err.message); }
       };
       reader.readAsArrayBuffer(file);
     } else {
       const reader = new FileReader();
       reader.onload = function(evt) {
         try {
-          const text = evt.target.result;
-          const parsed = window.PortfolioCSVParser.parseZerodhaCSV(text);
+          const parsed = window.PortfolioCSVParser.parseZerodhaCSV(evt.target.result);
           if (parsed.holdings && parsed.holdings.length > 0) {
             setHoldings(parsed.holdings);
             setIsUploaderOpen(false);
-            showNotification(`Successfully imported ${parsed.holdings.length} holdings (${parsed.kiteCount} Stocks, ${parsed.coinCount} Mutual Funds)!`);
+            showNotification(`Successfully imported ${parsed.holdings.length} holdings from CSV!`);
           } else {
             alert("No valid holdings detected in CSV file.");
           }
-        } catch (err) {
-          alert("CSV Parsing Error: " + err.message);
-        }
+        } catch (err) { alert("CSV Parsing Error: " + err.message); }
       };
       reader.readAsText(file);
     }
   };
 
-  // Format currency in Indian Rupees (INR)
   const formatINR = (val) => {
     if (val === undefined || val === null || isNaN(val)) return '₹0';
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(val);
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
   };
 
   return (
@@ -149,14 +173,14 @@ function App() {
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl font-bold text-white tracking-tight">Zerodha & Coin Portfolio</h1>
                   <span className="text-xs px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-medium">
-                    No API Required
+                    Microservices v2.0
                   </span>
                 </div>
-                <p className="text-xs text-slate-400">P&L Loss Diagnostic & Smart Reinvestment Engine</p>
+                <p className="text-xs text-slate-400">P&L Diagnostics & Investment Intelligence API</p>
               </div>
             </div>
 
-            {/* Actions */}
+            {/* Microservices Status Indicator */}
             <div className="flex items-center gap-3 flex-wrap">
               <button
                 onClick={() => setIsUploaderOpen(true)}
@@ -172,9 +196,11 @@ function App() {
                 🔄 Reset Sample
               </button>
 
-              <div className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium flex items-center gap-2">
+              <div className={`px-3 py-2 rounded-xl border text-xs font-medium flex items-center gap-2 ${
+                gatewayStatus === 'ONLINE' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+              }`}>
                 <span className="pulse-dot"></span>
-                <span>100% Private & Local</span>
+                <span>Microservices: {gatewayStatus === 'ONLINE' ? 'API Gateway Connected (:5000)' : 'Client-Side Mode'}</span>
               </div>
             </div>
           </div>
@@ -185,7 +211,6 @@ function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
         {/* Top Summary Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {/* Card 1: Total Investment */}
           <div className="glass-card p-5">
             <div className="text-xs font-medium text-slate-400 mb-1 uppercase tracking-wider">Total Invested</div>
             <div className="text-2xl font-bold text-white font-heading">{formatINR(summary.totalInvested)}</div>
@@ -195,7 +220,6 @@ function App() {
             </div>
           </div>
 
-          {/* Card 2: Current Value */}
           <div className="glass-card p-5">
             <div className="text-xs font-medium text-slate-400 mb-1 uppercase tracking-wider">Current Portfolio Value</div>
             <div className="text-2xl font-bold text-cyan-300 font-heading">{formatINR(summary.currentValue)}</div>
@@ -205,7 +229,6 @@ function App() {
             </div>
           </div>
 
-          {/* Card 3: Total P&L */}
           <div className="glass-card p-5">
             <div className="text-xs font-medium text-slate-400 mb-1 uppercase tracking-wider">Overall Return (P&L)</div>
             <div className={`text-2xl font-bold font-heading ${summary.totalPnl >= 0 ? 'text-emerald-400 glow-green' : 'text-rose-400 glow-red'}`}>
@@ -219,7 +242,6 @@ function App() {
             </div>
           </div>
 
-          {/* Card 4: Winners vs Losers */}
           <div className="glass-card p-5">
             <div className="text-xs font-medium text-slate-400 mb-1 uppercase tracking-wider">Holding Ratio</div>
             <div className="flex items-baseline gap-3 mt-1">
@@ -289,7 +311,6 @@ function App() {
         {/* TAB 1: PORTFOLIO HOLDINGS */}
         {activeTab === 'holdings' && (
           <div className="space-y-6">
-            {/* Search & Filter Bar */}
             <div className="glass-card p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="relative flex-1">
                 <input
@@ -302,7 +323,6 @@ function App() {
               </div>
 
               <div className="flex items-center gap-3 flex-wrap">
-                {/* Asset type filter */}
                 <select
                   value={assetFilter}
                   onChange={(e) => setAssetFilter(e.target.value)}
@@ -313,7 +333,6 @@ function App() {
                   <option value="Mutual Fund">Coin Mutual Funds Only</option>
                 </select>
 
-                {/* Sector filter */}
                 <select
                   value={sectorFilter}
                   onChange={(e) => setSectorFilter(e.target.value)}
@@ -327,7 +346,6 @@ function App() {
               </div>
             </div>
 
-            {/* Holdings Table */}
             <div className="glass-card overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm text-slate-300">
@@ -399,7 +417,6 @@ function App() {
               </div>
             </div>
 
-            {/* Sector Allocation Breakdown */}
             <div className="glass-card p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Sector Allocation & Breakdown</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -419,10 +436,9 @@ function App() {
           </div>
         )}
 
-        {/* TAB 2: LOSS DIAGNOSTICS ("Where I Faced Loss") */}
+        {/* TAB 2: LOSS DIAGNOSTICS */}
         {activeTab === 'losses' && (
           <div className="space-y-6">
-            {/* Loss Summary Banner */}
             <div className="glass-card p-6 bg-gradient-to-r from-rose-950/30 via-slate-900 to-slate-900 border-rose-500/20">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
@@ -440,12 +456,10 @@ function App() {
                     <div className="text-2xl font-bold text-rose-400 font-mono">{lossDiagnostics.severe.length}</div>
                     <div className="text-xs text-slate-400">Severe (-20%+)</div>
                   </div>
-
                   <div className="p-4 rounded-xl bg-orange-500/10 border border-orange-500/20 text-center">
                     <div className="text-2xl font-bold text-orange-400 font-mono">{lossDiagnostics.moderate.length}</div>
                     <div className="text-xs text-slate-400">Moderate (-5% to -20%)</div>
                   </div>
-
                   <div className="p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-center">
                     <div className="text-2xl font-bold text-yellow-400 font-mono">{lossDiagnostics.minor.length}</div>
                     <div className="text-xs text-slate-400">Minor (&lt; -5%)</div>
@@ -454,31 +468,9 @@ function App() {
               </div>
             </div>
 
-            {/* Sector Drag Section */}
-            <div className="glass-card p-6">
-              <h3 className="text-lg font-semibold text-white mb-2">Sectors Dragging Down Your Portfolio</h3>
-              <p className="text-xs text-slate-400 mb-4">Sectors contributing the highest absolute rupee loss to your overall portfolio:</p>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {lossDiagnostics.sectorDrag.map(sd => (
-                  <div key={sd.sector} className="p-4 rounded-xl bg-slate-900/80 border border-rose-500/20 flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-semibold text-slate-200">{sd.sector}</div>
-                      <div className="text-xs text-rose-400 font-mono">Total Loss: -{formatINR(sd.totalLoss)}</div>
-                    </div>
-                    <div className="w-10 h-10 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-400 text-lg">
-                      📉
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Detailed Loss Table */}
             <div className="glass-card overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
                 <h3 className="font-semibold text-white">Detailed Loss Breakdown ({lossDiagnostics.lossItems.length} Items)</h3>
-                <span className="text-xs text-slate-400">Sorted by highest absolute loss</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm text-slate-300">
@@ -494,36 +486,24 @@ function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {lossDiagnostics.lossItems.length === 0 ? (
-                      <tr>
-                        <td colSpan="7" className="text-center py-12 text-emerald-400">
-                          🎉 Congratulations! None of your holdings are currently at a loss.
+                    {lossDiagnostics.lossItems.map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-800/40 transition">
+                        <td className="px-6 py-4">
+                          <div className="font-semibold text-white">{item.symbol}</div>
+                          <div className="text-xs text-slate-400">{item.name} • <span className="text-cyan-400/80">{item.sector}</span></div>
                         </td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-block px-3 py-1 rounded-lg text-xs font-semibold border ${item.severityBadgeClass}`}>
+                            {item.severity}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-right font-mono text-slate-300">₹{item.avgCost.toFixed(2)}</td>
+                        <td className="px-6 py-4 text-right font-mono text-white">₹{item.ltp.toFixed(2)}</td>
+                        <td className="px-6 py-4 text-right font-mono text-slate-300">{formatINR(item.invested)}</td>
+                        <td className="px-6 py-4 text-right font-mono font-bold text-rose-400">-{formatINR(item.absLoss)}</td>
+                        <td className="px-6 py-4 text-right font-mono font-bold text-rose-400">▼ {item.pnlPercent.toFixed(2)}%</td>
                       </tr>
-                    ) : (
-                      lossDiagnostics.lossItems.map((item) => (
-                        <tr key={item.id} className="hover:bg-slate-800/40 transition">
-                          <td className="px-6 py-4">
-                            <div className="font-semibold text-white">{item.symbol}</div>
-                            <div className="text-xs text-slate-400">{item.name} • <span className="text-cyan-400/80">{item.sector}</span></div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={`inline-block px-3 py-1 rounded-lg text-xs font-semibold border ${item.severityBadgeClass}`}>
-                              {item.severity}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-right font-mono text-slate-300">₹{item.avgCost.toFixed(2)}</td>
-                          <td className="px-6 py-4 text-right font-mono text-white">₹{item.ltp.toFixed(2)}</td>
-                          <td className="px-6 py-4 text-right font-mono text-slate-300">{formatINR(item.invested)}</td>
-                          <td className="px-6 py-4 text-right font-mono font-bold text-rose-400">
-                            -{formatINR(item.absLoss)}
-                          </td>
-                          <td className="px-6 py-4 text-right font-mono font-bold text-rose-400">
-                            ▼ {item.pnlPercent.toFixed(2)}%
-                          </td>
-                        </tr>
-                      ))
-                    )}
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -531,57 +511,44 @@ function App() {
           </div>
         )}
 
-        {/* TAB 3: SMART REINVESTMENT ("Where to Put More Money") */}
+        {/* TAB 3: SMART REINVESTMENT */}
         {activeTab === 'reinvest' && (
           <div className="space-y-6">
-            {/* Header Description */}
             <div className="glass-card p-6 bg-gradient-to-r from-emerald-950/30 via-slate-900 to-slate-900 border-emerald-500/20">
-              <h2 className="text-xl font-bold text-white mb-1">Capital Reinvestment & Allocation Engine</h2>
+              <h2 className="text-xl font-bold text-white mb-1">Capital Reinvestment Engine (Powered by Microservices)</h2>
               <p className="text-sm text-slate-400">
-                Discover smart avenues to deploy additional capital: Average down on high-conviction dips, fill sector gaps, or explore top-rated external stocks and ETFs.
+                Discover smart avenues to deploy additional capital: Short-term tactical picks, long-term compounders, and dip averaging opportunities.
               </p>
 
-              {/* Subtabs */}
               <div className="flex items-center gap-3 mt-6 flex-wrap">
                 <button
                   onClick={() => setReinvestSubTab('shortTerm')}
                   className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
-                    reinvestSubTab === 'shortTerm'
-                      ? 'bg-amber-400 text-slate-950 shadow-lg shadow-amber-400/20'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    reinvestSubTab === 'shortTerm' ? 'bg-amber-400 text-slate-950 shadow-lg shadow-amber-400/20' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                   }`}
                 >
                   ⚡ Short-Term (6–18 Mos)
                 </button>
-
                 <button
                   onClick={() => setReinvestSubTab('longTerm')}
                   className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
-                    reinvestSubTab === 'longTerm'
-                      ? 'bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/20'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    reinvestSubTab === 'longTerm' ? 'bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/20' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                   }`}
                 >
                   🏛️ Long-Term (3–10 Yrs)
                 </button>
-
                 <button
                   onClick={() => setReinvestSubTab('avgDown')}
                   className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
-                    reinvestSubTab === 'avgDown'
-                      ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    reinvestSubTab === 'avgDown' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                   }`}
                 >
                   🎯 Average-Down Dips ({reinvestOpportunities.averageDownCandidates.length})
                 </button>
-
                 <button
                   onClick={() => setReinvestSubTab('sectorGaps')}
                   className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
-                    reinvestSubTab === 'sectorGaps'
-                      ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    reinvestSubTab === 'sectorGaps' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                   }`}
                 >
                   🌐 Sector Gaps ({reinvestOpportunities.sectorGaps.length})
@@ -589,7 +556,7 @@ function App() {
               </div>
             </div>
 
-            {/* SUBTAB: SHORT TERM RECOMMENDATIONS */}
+            {/* SHORT TERM */}
             {reinvestSubTab === 'shortTerm' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {reinvestOpportunities.externalIdeas.filter(i => i.horizonTag === 'Short-Term').map(item => (
@@ -604,22 +571,17 @@ function App() {
                         </div>
                         <div className="text-xs text-slate-400">{item.name} • <span className="text-amber-400">{item.sector}</span></div>
                       </div>
-
                       <div className="text-right">
                         <div className="text-sm font-bold text-white font-mono">₹{item.price.toFixed(2)}</div>
                         <div className="text-xs text-amber-300">{item.risk}</div>
                       </div>
                     </div>
-
                     <p className="text-xs text-slate-300 bg-slate-900/80 p-3 rounded-xl border border-slate-800/80 mb-3">
                       💡 <span className="font-semibold text-amber-300">Tactical Thesis:</span> {item.rationale}
                     </p>
-
                     <div className="flex items-center gap-2 flex-wrap">
                       {item.tags.map(t => (
-                        <span key={t} className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700">
-                          #{t}
-                        </span>
+                        <span key={t} className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700">#{t}</span>
                       ))}
                     </div>
                   </div>
@@ -627,7 +589,7 @@ function App() {
               </div>
             )}
 
-            {/* SUBTAB: LONG TERM RECOMMENDATIONS */}
+            {/* LONG TERM */}
             {reinvestSubTab === 'longTerm' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {reinvestOpportunities.externalIdeas.filter(i => i.horizonTag === 'Long-Term').map(item => (
@@ -642,22 +604,17 @@ function App() {
                         </div>
                         <div className="text-xs text-slate-400">{item.name} • <span className="text-cyan-400">{item.sector}</span></div>
                       </div>
-
                       <div className="text-right">
                         <div className="text-sm font-bold text-white font-mono">₹{item.price.toFixed(2)}</div>
                         <div className="text-xs text-emerald-400">{item.risk}</div>
                       </div>
                     </div>
-
                     <p className="text-xs text-slate-300 bg-slate-900/80 p-3 rounded-xl border border-slate-800/80 mb-3">
                       🏛️ <span className="font-semibold text-cyan-300">Core Compounding Thesis:</span> {item.rationale}
                     </p>
-
                     <div className="flex items-center gap-2 flex-wrap">
                       {item.tags.map(t => (
-                        <span key={t} className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700">
-                          #{t}
-                        </span>
+                        <span key={t} className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700">#{t}</span>
                       ))}
                     </div>
                   </div>
@@ -665,149 +622,61 @@ function App() {
               </div>
             )}
 
-            {/* SUBTAB 1: AVERAGE DOWN */}
+            {/* AVERAGE DOWN */}
             {reinvestSubTab === 'avgDown' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {reinvestOpportunities.averageDownCandidates.length === 0 ? (
-                  <div className="col-span-2 glass-card p-12 text-center text-slate-400">
-                    No dip-averaging candidates detected at this time.
-                  </div>
-                ) : (
-                  reinvestOpportunities.averageDownCandidates.map(c => (
-                    <div key={c.id} className="glass-card p-5 hover:border-emerald-500/40 transition">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="text-lg font-bold text-white">{c.symbol}</div>
-                          <div className="text-xs text-slate-400">{c.name} • <span className="text-cyan-400">{c.sector}</span></div>
-                        </div>
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                          {c.score}
-                        </span>
+                {reinvestOpportunities.averageDownCandidates.map(c => (
+                  <div key={c.id} className="glass-card p-5 hover:border-emerald-500/40 transition">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="text-lg font-bold text-white">{c.symbol}</div>
+                        <div className="text-xs text-slate-400">{c.name} • <span className="text-cyan-400">{c.sector}</span></div>
                       </div>
-
-                      <div className="grid grid-cols-2 gap-4 my-4 p-3 rounded-xl bg-slate-900/80 text-xs font-mono">
-                        <div>
-                          <span className="text-slate-500 block">Buy Avg Price</span>
-                          <span className="text-slate-200 text-sm font-semibold">₹{c.avgCost.toFixed(2)}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-500 block">Current Price (LTP)</span>
-                          <span className="text-emerald-400 text-sm font-semibold">₹{c.ltp.toFixed(2)} ({c.pnlPercent.toFixed(1)}%)</span>
-                        </div>
-                      </div>
-
-                      <div className="text-xs text-slate-300 bg-emerald-950/30 border border-emerald-500/20 p-3 rounded-xl">
-                        💡 <span className="font-semibold text-emerald-300">Strategy Rationale:</span> {c.actionNote}
-                      </div>
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        {c.score}
+                      </span>
                     </div>
-                  ))
-                )}
+                    <div className="grid grid-cols-2 gap-4 my-4 p-3 rounded-xl bg-slate-900/80 text-xs font-mono">
+                      <div><span className="text-slate-500 block">Buy Avg Price</span><span className="text-slate-200 text-sm font-semibold">₹{c.avgCost.toFixed(2)}</span></div>
+                      <div><span className="text-slate-500 block">Current Price</span><span className="text-emerald-400 text-sm font-semibold">₹{c.ltp.toFixed(2)} ({c.pnlPercent.toFixed(1)}%)</span></div>
+                    </div>
+                    <div className="text-xs text-slate-300 bg-emerald-950/30 border border-emerald-500/20 p-3 rounded-xl">
+                      💡 <span className="font-semibold text-emerald-300">Strategy Rationale:</span> {c.actionNote}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
-            {/* SUBTAB 2: SECTOR GAPS */}
+            {/* SECTOR GAPS */}
             {reinvestSubTab === 'sectorGaps' && (
               <div className="glass-card p-6">
                 <h3 className="text-lg font-semibold text-white mb-2">Missing High-Growth Indian Sectors</h3>
-                <p className="text-xs text-slate-400 mb-6">
-                  Adding exposure to these sectors helps diversify your portfolio against sector-specific downturns:
-                </p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
                   {reinvestOpportunities.sectorGaps.map(sec => (
                     <div key={sec} className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
-                      <div>
-                        <div className="text-sm font-bold text-white">{sec}</div>
-                        <div className="text-xs text-emerald-400 mt-1">Recommended for Diversification</div>
-                      </div>
-                      <div className="w-8 h-8 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center font-bold text-sm">
-                        +
-                      </div>
+                      <div><div className="text-sm font-bold text-white">{sec}</div><div className="text-xs text-emerald-400 mt-1">Recommended Sector</div></div>
+                      <div className="w-8 h-8 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center font-bold text-sm">+</div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-
-            {/* SUBTAB 3: EXTERNAL STOCKS & ETFS */}
-            {reinvestSubTab === 'external' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {reinvestOpportunities.externalIdeas.map(item => (
-                  <div key={item.symbol} className="glass-card p-6 hover:border-cyan-500/40 transition">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg font-bold text-white">{item.symbol}</span>
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-medium">
-                            {item.category}
-                          </span>
-                        </div>
-                        <div className="text-xs text-slate-400">{item.name}</div>
-                      </div>
-
-                      <div className="text-right">
-                        <div className="text-sm font-bold text-white font-mono">₹{item.price.toFixed(2)}</div>
-                        <div className="text-xs text-emerald-400">{item.risk}</div>
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-slate-300 bg-slate-900/80 p-3 rounded-xl border border-slate-800/80 mb-3">
-                      {item.rationale}
-                    </p>
-
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {item.tags.map(t => (
-                        <span key={t} className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700">
-                          #{t}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
-        {/* TAB 4: HOW TO EXPORT FILES GUIDE */}
+        {/* TAB 4: HOW TO EXPORT FILES */}
         {activeTab === 'guide' && (
           <div className="glass-card p-8 space-y-8">
-            <div>
-              <h2 className="text-2xl font-bold text-white mb-2">How to Export Files from Zerodha & Coin</h2>
-              <p className="text-sm text-slate-400">
-                Follow these simple steps to download your free holdings statement (CSV or XLSX Excel) from Zerodha.
-              </p>
-            </div>
-
+            <h2 className="text-2xl font-bold text-white mb-2">How to Export Files from Zerodha & Coin</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Step 1: Kite */}
               <div className="p-6 rounded-2xl bg-slate-900/80 border border-cyan-500/20">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-8 h-8 rounded-full bg-cyan-500/20 text-cyan-400 font-bold flex items-center justify-center">1</div>
-                  <h3 className="text-lg font-bold text-white">Zerodha Kite (Stocks & ETFs)</h3>
-                </div>
-
-                <ol className="space-y-3 text-xs text-slate-300 list-decimal list-inside">
-                  <li>Log into <a href="https://kite.zerodha.com" target="_blank" className="text-cyan-400 underline">kite.zerodha.com</a> or Zerodha Console.</li>
-                  <li>Click on the <strong className="text-white">Holdings</strong> tab.</li>
-                  <li>Click <strong className="text-cyan-300">Download CSV / Excel (.xlsx)</strong> statement.</li>
-                  <li>Upload the `.csv` or `.xlsx` file directly into this dashboard!</li>
-                </ol>
+                <h3 className="text-lg font-bold text-white mb-2">Zerodha Kite (Stocks & ETFs)</h3>
+                <p className="text-xs text-slate-300">Log into Kite or Console $\rightarrow$ Holdings $\rightarrow$ Download CSV/XLSX statement.</p>
               </div>
-
-              {/* Step 2: Coin */}
               <div className="p-6 rounded-2xl bg-slate-900/80 border border-purple-500/20">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-8 h-8 rounded-full bg-purple-500/20 text-purple-400 font-bold flex items-center justify-center">2</div>
-                  <h3 className="text-lg font-bold text-white">Zerodha Coin (Mutual Funds)</h3>
-                </div>
-
-                <ol className="space-y-3 text-xs text-slate-300 list-decimal list-inside">
-                  <li>Log into <a href="https://coin.zerodha.com" target="_blank" className="text-purple-400 underline">coin.zerodha.com</a>.</li>
-                  <li>Navigate to your <strong className="text-white">Mutual Fund Holdings</strong> page.</li>
-                  <li>Click <strong className="text-purple-300">Download CSV or Excel</strong> file.</li>
-                  <li>Upload the file into this app. The system automatically detects and merges stocks and mutual funds!</li>
-                </ol>
+                <h3 className="text-lg font-bold text-white mb-2">Zerodha Coin (Mutual Funds)</h3>
+                <p className="text-xs text-slate-300">Log into Coin $\rightarrow$ Mutual Fund Holdings $\rightarrow$ Download CSV or Excel file.</p>
               </div>
             </div>
           </div>
@@ -818,41 +687,16 @@ function App() {
       {isUploaderOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
           <div className="glass-card max-w-lg w-full p-6 relative border-cyan-500/30">
-            <button
-              onClick={() => setIsUploaderOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white text-lg font-bold"
-            >
-              ✕
-            </button>
-
+            <button onClick={() => setIsUploaderOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white text-lg font-bold">✕</button>
             <h3 className="text-xl font-bold text-white mb-2">Upload Zerodha CSV or Excel (.xlsx)</h3>
-            <p className="text-xs text-slate-400 mb-6">
-              Select your Zerodha Kite or Coin holdings file (`.csv`, `.xlsx`, or `.xls`). Processed 100% locally in your browser.
-            </p>
-
+            <p className="text-xs text-slate-400 mb-6">Select your Zerodha Kite or Coin holdings file (`.csv`, `.xlsx`, or `.xls`). Processed via Microservices API Gateway.</p>
             <div className="border-2 border-dashed border-slate-700 hover:border-cyan-500/60 rounded-2xl p-8 text-center bg-slate-900/50 transition cursor-pointer">
-              <input
-                type="file"
-                accept=".csv,.xlsx,.xls,.txt"
-                onChange={handleFileUpload}
-                className="hidden"
-                id="file-input"
-              />
+              <input type="file" accept=".csv,.xlsx,.xls,.txt" onChange={handleFileUpload} className="hidden" id="file-input" />
               <label htmlFor="file-input" className="cursor-pointer">
                 <div className="text-4xl mb-3">📁</div>
                 <div className="text-sm font-semibold text-white mb-1">Click to select CSV or Excel (.xlsx) File</div>
-                <div className="text-xs text-cyan-400/80 font-mono">Accepts .csv, .xlsx, .xls</div>
+                <div className="text-xs text-cyan-400/80 font-mono">Sent to Parser Microservice (or fallback local)</div>
               </label>
-            </div>
-
-            <div className="mt-6 flex items-center justify-between text-xs text-slate-400">
-              <span>🔒 100% Private - Processed entirely offline</span>
-              <button
-                onClick={() => setIsUploaderOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium"
-              >
-                Cancel
-              </button>
             </div>
           </div>
         </div>

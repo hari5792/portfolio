@@ -1,0 +1,13 @@
+{
+  "name": "analytics-service",
+  "version": "1.0.0",
+  "description": "Analytics Microservice for Zerodha Portfolio Loss Diagnostics & Sector Breakdown",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  }
+}

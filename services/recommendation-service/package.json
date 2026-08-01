@@ -1,0 +1,13 @@
+{
+  "name": "recommendation-service",
+  "version": "1.0.0",
+  "description": "Recommendation Microservice for Short-Term & Long-Term Investment Opportunities",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  }
+}
