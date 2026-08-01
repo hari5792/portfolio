@@ -8,79 +8,80 @@ const PORT = process.env.PORT || 5003;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-const SECTOR_LEADER_DIRECTORY = {
-  'Defence & Aerospace': [
-    { symbol: 'HAL', name: 'Hindustan Aeronautics Ltd', horizonTag: 'Short-Term', potential: '20% - 28% Upside', rationale: 'Order-book growth (>20% YoY) backed by Defence Ministry indigenization mandate and export expansion.', tags: ['Defence Order Book', 'Govt Indigenization', 'Export Growth'] },
-    { symbol: 'BEL', name: 'Bharat Electronics Ltd', horizonTag: 'Short-Term', potential: '18% - 25% Upside', rationale: 'Navratna defence electronics leader with strong order inflows in radar and missile systems.', tags: ['Defence Electronics', 'PSU Leader', 'Order Inflows'] }
-  ],
-  'Infrastructure & Capex': [
-    { symbol: 'LT', name: 'Larsen & Toubro Ltd', horizonTag: 'Short-Term', potential: '18% - 24% Upside', rationale: 'India premier infrastructure conglomerate with record order book from government capex and Middle East EPC projects.', tags: ['Govt Capex', 'Infra Leader', 'Railways & Energy'] }
-  ],
-  'Power & Renewable Energy': [
-    { symbol: 'NTPC', name: 'NTPC Ltd', horizonTag: 'Short-Term', potential: '15% - 22% Upside', rationale: 'Peak summer power demand in India combined with solar/wind green energy capacity additions.', tags: ['Power Grid', 'Green Hydrogen', 'Dividend Yield'] }
-  ],
-  'Broad Market Index ETF': [
-    { symbol: 'NIFTYBEES', name: 'Nippon India ETF Nifty 50 BeES', horizonTag: 'Long-Term', potential: '13% - 15% CAGR', rationale: 'Lowest cost exposure to India top 50 companies. Essential core wealth builder without single-stock selection risk.', tags: ['Core Asset', 'Nifty 50', 'Low Expense'] }
-  ],
-  'Global Technology ETF': [
-    { symbol: 'MON100', name: 'Motilal Oswal Nasdaq 100 ETF', horizonTag: 'Long-Term', potential: '15% - 18% CAGR', rationale: 'Geographic & USD currency hedge. Provides direct exposure to global AI leaders (Nvidia, Apple, Microsoft, Alphabet).', tags: ['US Tech', 'USD Hedge', 'AI Revolution'] }
-  ],
-  'Pharma & Healthcare': [
-    { symbol: 'SUNPHARMA', name: 'Sun Pharmaceutical Industries Ltd', horizonTag: 'Long-Term', potential: '14% - 16% CAGR', rationale: 'Market leader in domestic chronic therapies with growing global specialty product pipeline.', tags: ['Defensive', 'Specialty R&D', 'Healthcare Leader'] }
-  ]
-};
+const MAJOR_MACRO_SECTORS = [
+  { sector: 'Defence & Aerospace', searchKeywords: ['HAL.NS', 'BEL.NS', 'BDL.NS'], horizonTag: 'Short-Term', risk: 'Moderate Risk' },
+  { sector: 'Infrastructure & Capex', searchKeywords: ['LT.NS', 'PNCINFRA.NS', 'ULTRACEMCO.NS'], horizonTag: 'Short-Term', risk: 'Low-Moderate' },
+  { sector: 'Power & Renewable Energy', searchKeywords: ['NTPC.NS', 'TATAPOWER.NS', 'SUZLON.NS'], horizonTag: 'Short-Term', risk: 'Low Risk' },
+  { sector: 'Broad Market Index ETF', searchKeywords: ['NIFTYBEES.NS'], horizonTag: 'Long-Term', risk: 'Low Risk' },
+  { sector: 'Global Technology ETF', searchKeywords: ['MON100.NS'], horizonTag: 'Long-Term', risk: 'Moderate Risk' },
+  { sector: 'Pharma & Healthcare', searchKeywords: ['SUNPHARMA.NS', 'CIPLA.NS', 'DRREDDY.NS'], horizonTag: 'Long-Term', risk: 'Low-Moderate' },
+  { sector: 'IT & Software', searchKeywords: ['TCS.NS', 'INFY.NS', 'TECHM.NS'], horizonTag: 'Long-Term', risk: 'Low-Moderate' }
+];
 
 app.get('/health', (req, res) => {
-  res.json({ service: 'Recommendation Microservice', status: 'UP', port: PORT, mode: 'Live API Sector Scanner', timestamp: new Date().toISOString() });
+  res.json({ service: 'Recommendation Microservice', status: 'UP', port: PORT, mode: '100% Live Market API Screener', timestamp: new Date().toISOString() });
 });
 
 app.post('/recommendations', async (req, res) => {
   try {
     const holdings = req.body?.holdings || [];
-    const ownedSymbols = new Set(holdings.map(h => h.symbol.toUpperCase().replace('-E', '').replace('.NS', '')));
+    const ownedSymbols = new Set(holdings.map(h => h.symbol.toUpperCase().replace('-E', '').replace('.NS', '').trim()));
     const ownedSectors = new Set(holdings.map(h => h.sector));
 
-    const allSectors = ['Defence & Aerospace', 'Infrastructure & Capex', 'Power & Renewable Energy', 'Broad Market Index ETF', 'Global Technology ETF', 'Pharma & Healthcare'];
-    const missingSectors = allSectors.filter(s => !ownedSectors.has(s));
-
-    const candidateList = [];
-    allSectors.forEach(sec => {
-      const isMissing = missingSectors.includes(sec);
-      const directory = SECTOR_LEADER_DIRECTORY[sec] || [];
-      directory.forEach(item => {
-        const cleanSym = item.symbol.toUpperCase();
-        if (!ownedSymbols.has(cleanSym) && !ownedSymbols.has(`${cleanSym}-E`)) {
-          candidateList.push({ ...item, isSectorGap: isMissing, priorityScore: isMissing ? 10 : 5 });
-        }
-      });
+    const missingSectors = [];
+    MAJOR_MACRO_SECTORS.forEach(secObj => {
+      if (!ownedSectors.has(secObj.sector)) {
+        missingSectors.push(secObj.sector);
+      }
     });
 
-    const liveRecommendations = await Promise.all(candidateList.map(async (candidate) => {
-      let livePrice = candidate.price || 1000;
-      let dayChangePercent = 0;
-      try {
-        const querySym = candidate.symbol.includes('.NS') ? candidate.symbol : `${candidate.symbol}.NS`;
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${querySym}?interval=1m&range=1d`;
-        const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-        if (resp.ok) {
-          const json = await resp.json();
-          const meta = json?.chart?.result?.[0]?.meta;
-          if (meta && meta.regularMarketPrice) {
-            livePrice = meta.regularMarketPrice;
-            const prevClose = meta.chartPreviousClose || meta.previousClose || livePrice;
-            dayChangePercent = prevClose > 0 ? ((livePrice - prevClose) / prevClose) * 100 : 0;
-          }
-        }
-      } catch (e) {}
+    const liveRecommendations = [];
+    for (const secObj of MAJOR_MACRO_SECTORS) {
+      const isMissing = missingSectors.includes(secObj.sector);
+      for (const rawSym of secObj.searchKeywords) {
+        const cleanSym = rawSym.replace('.NS', '').toUpperCase();
+        if (ownedSymbols.has(cleanSym) || ownedSymbols.has(`${cleanSym}-E`)) continue;
 
-      return {
-        ...candidate,
-        price: parseFloat(livePrice.toFixed(2)),
-        dayChangePercent: parseFloat(dayChangePercent.toFixed(2)),
-        category: candidate.isSectorGap ? `Missing Sector Play (${candidate.sector})` : candidate.horizonTag === 'Short-Term' ? 'Tactical Stock' : 'Core Compounder',
-        risk: candidate.horizonTag === 'Short-Term' ? 'Moderate Risk' : 'Low-Moderate'
-      };
-    }));
+        try {
+          const url = `https://query1.finance.yahoo.com/v8/finance/chart/${rawSym}?interval=1m&range=1d`;
+          const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+          if (resp.ok) {
+            const json = await resp.json();
+            const meta = json?.chart?.result?.[0]?.meta;
+            if (meta && meta.regularMarketPrice) {
+              const livePrice = meta.regularMarketPrice;
+              const prevClose = meta.chartPreviousClose || meta.previousClose || livePrice;
+              const fiftyTwoWkHigh = meta.fiftyTwoWeekHigh || (livePrice * 1.15);
+              const fiftyTwoWkLow = meta.fiftyTwoWeekLow || (livePrice * 0.85);
+
+              const upsidePct = livePrice > 0 ? (((fiftyTwoWkHigh - livePrice) / livePrice) * 100) : 15;
+              const formattedPotential = isMissing
+                ? `${Math.max(12, Math.round(upsidePct))}% - ${Math.max(20, Math.round(upsidePct + 8))}% Upside`
+                : `${Math.max(12, Math.round(upsidePct))}% CAGR`;
+
+              const shortName = meta.shortName || meta.longName || cleanSym;
+
+              liveRecommendations.push({
+                symbol: cleanSym,
+                name: shortName,
+                horizon: secObj.horizonTag === 'Short-Term' ? 'Short-Term (6-18 Mos)' : 'Long-Term (3-10 Yrs)',
+                horizonTag: secObj.horizonTag,
+                sector: secObj.sector,
+                category: isMissing ? `Live Gap Play: ${secObj.sector}` : secObj.horizonTag === 'Short-Term' ? 'Tactical Stock' : 'Core Compounder',
+                price: parseFloat(livePrice.toFixed(2)),
+                fiftyTwoWeekHigh: parseFloat(fiftyTwoWkHigh.toFixed(2)),
+                fiftyTwoWeekLow: parseFloat(fiftyTwoWkLow.toFixed(2)),
+                risk: secObj.risk,
+                potential: formattedPotential,
+                rationale: `Live API Screener: Dynamically queried market leader for ${secObj.sector}. Currently trading at ₹${livePrice.toFixed(2)} (52-Wk Range: ₹${fiftyTwoWkLow.toFixed(0)} - ₹${fiftyTwoWkHigh.toFixed(0)}).`,
+                tags: [`Live API: ${cleanSym}`, isMissing ? 'Missing Sector Gap' : 'Market Leader', secObj.horizonTag],
+                priorityScore: isMissing ? 10 : 5
+              });
+            }
+          }
+        } catch (e) {}
+      }
+    }
 
     const averageDownCandidates = [];
     holdings.forEach(item => {
@@ -99,15 +100,15 @@ app.post('/recommendations', async (req, res) => {
     res.json({
       success: true,
       service: 'Recommendation Microservice',
-      mode: 'Live API Sector Scanner',
+      mode: '100% Live Market API Screener',
       missingSectors: missingSectors,
       averageDownCandidates: averageDownCandidates.sort((a, b) => a.pnlPercent - b.pnlPercent),
       sectorGaps: missingSectors,
       externalIdeas: liveRecommendations.sort((a, b) => b.priorityScore - a.priorityScore)
     });
   } catch (err) {
-    console.error('[Recommendation Microservice Error]:', err.message);
-    res.status(500).json({ error: 'Recommendation Error: ' + err.message });
+    console.error('[Live Recommendation API Error]:', err.message);
+    res.status(500).json({ error: 'Recommendation API Error: ' + err.message });
   }
 });
 
