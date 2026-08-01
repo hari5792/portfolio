@@ -1,13 +1,4 @@
 {
-  "version": 2,
-  "builds": [
-    { "src": "api/*.js", "use": "@vercel/node" },
-    { "src": "index.html", "use": "@vercel/static" }
-  ],
-  "routes": [
-    { "src": "/api/parse", "dest": "/api/parse.js" },
-    { "src": "/api/analytics", "dest": "/api/analytics.js" },
-    { "src": "/api/recommendations", "dest": "/api/recommendations.js" },
-    { "src": "/(.*)", "dest": "/$1" }
-  ]
+  "cleanUrls": true,
+  "trailingSlash": false
 }

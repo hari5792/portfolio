@@ -1,7 +1,8 @@
-// Zerodha & Coin Portfolio Intelligence React Dashboard (Connected to Microservices API Gateway)
 const { useState, useEffect, useMemo } = React;
 
-const GATEWAY_URL = 'http://localhost:5000';
+const GATEWAY_URL = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? 'http://localhost:5000'
+  : (typeof window !== 'undefined' ? window.location.origin : '');
 
 function App() {
   const [holdings, setHoldings] = useState(() => {
