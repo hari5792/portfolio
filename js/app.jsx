@@ -20,7 +20,7 @@ function App() {
   const [assetFilter, setAssetFilter] = useState('ALL'); // 'ALL', 'Stock', 'Mutual Fund'
   const [sectorFilter, setSectorFilter] = useState('ALL');
   const [isUploaderOpen, setIsUploaderOpen] = useState(false);
-  const [reinvestSubTab, setReinvestSubTab] = useState('avgDown'); // 'avgDown', 'sectorGaps', 'external'
+  const [reinvestSubTab, setReinvestSubTab] = useState('shortTerm'); // 'shortTerm', 'longTerm', 'avgDown', 'sectorGaps'
   const [notification, setNotification] = useState(null);
 
   // Save to localStorage on change
@@ -542,7 +542,29 @@ function App() {
               </p>
 
               {/* Subtabs */}
-              <div className="flex items-center gap-3 mt-6">
+              <div className="flex items-center gap-3 mt-6 flex-wrap">
+                <button
+                  onClick={() => setReinvestSubTab('shortTerm')}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
+                    reinvestSubTab === 'shortTerm'
+                      ? 'bg-amber-400 text-slate-950 shadow-lg shadow-amber-400/20'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  ⚡ Short-Term (6–18 Mos)
+                </button>
+
+                <button
+                  onClick={() => setReinvestSubTab('longTerm')}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
+                    reinvestSubTab === 'longTerm'
+                      ? 'bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/20'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  🏛️ Long-Term (3–10 Yrs)
+                </button>
+
                 <button
                   onClick={() => setReinvestSubTab('avgDown')}
                   className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
@@ -551,7 +573,7 @@ function App() {
                       : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                   }`}
                 >
-                  🎯 Average-Down Opportunities ({reinvestOpportunities.averageDownCandidates.length})
+                  🎯 Average-Down Dips ({reinvestOpportunities.averageDownCandidates.length})
                 </button>
 
                 <button
@@ -562,21 +584,86 @@ function App() {
                       : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                   }`}
                 >
-                  🌐 Sector Gap Analysis ({reinvestOpportunities.sectorGaps.length} Gaps)
-                </button>
-
-                <button
-                  onClick={() => setReinvestSubTab('external')}
-                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
-                    reinvestSubTab === 'external'
-                      ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  ⭐ Recommended Stocks & ETFs ({reinvestOpportunities.externalIdeas.length})
+                  🌐 Sector Gaps ({reinvestOpportunities.sectorGaps.length})
                 </button>
               </div>
             </div>
+
+            {/* SUBTAB: SHORT TERM RECOMMENDATIONS */}
+            {reinvestSubTab === 'shortTerm' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {reinvestOpportunities.externalIdeas.filter(i => i.horizonTag === 'Short-Term').map(item => (
+                  <div key={item.symbol} className="glass-card p-6 border-amber-500/20 hover:border-amber-500/50 transition">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg font-bold text-white">{item.symbol}</span>
+                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 font-semibold">
+                            {item.potential}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-400">{item.name} • <span className="text-amber-400">{item.sector}</span></div>
+                      </div>
+
+                      <div className="text-right">
+                        <div className="text-sm font-bold text-white font-mono">₹{item.price.toFixed(2)}</div>
+                        <div className="text-xs text-amber-300">{item.risk}</div>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-slate-300 bg-slate-900/80 p-3 rounded-xl border border-slate-800/80 mb-3">
+                      💡 <span className="font-semibold text-amber-300">Tactical Thesis:</span> {item.rationale}
+                    </p>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {item.tags.map(t => (
+                        <span key={t} className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700">
+                          #{t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* SUBTAB: LONG TERM RECOMMENDATIONS */}
+            {reinvestSubTab === 'longTerm' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {reinvestOpportunities.externalIdeas.filter(i => i.horizonTag === 'Long-Term').map(item => (
+                  <div key={item.symbol} className="glass-card p-6 border-cyan-500/20 hover:border-cyan-500/50 transition">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg font-bold text-white">{item.symbol}</span>
+                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 font-semibold">
+                            {item.potential}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-400">{item.name} • <span className="text-cyan-400">{item.sector}</span></div>
+                      </div>
+
+                      <div className="text-right">
+                        <div className="text-sm font-bold text-white font-mono">₹{item.price.toFixed(2)}</div>
+                        <div className="text-xs text-emerald-400">{item.risk}</div>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-slate-300 bg-slate-900/80 p-3 rounded-xl border border-slate-800/80 mb-3">
+                      🏛️ <span className="font-semibold text-cyan-300">Core Compounding Thesis:</span> {item.rationale}
+                    </p>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {item.tags.map(t => (
+                        <span key={t} className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700">
+                          #{t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* SUBTAB 1: AVERAGE DOWN */}
             {reinvestSubTab === 'avgDown' && (
