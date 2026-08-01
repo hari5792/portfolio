@@ -21,6 +21,7 @@ function App() {
   const [reinvestSubTab, setReinvestSubTab] = useState('shortTerm');
   const [notification, setNotification] = useState(null);
   const [gatewayStatus, setGatewayStatus] = useState('CHECKING');
+  const [liveSyncStatus, setLiveSyncStatus] = useState('SYNCING');
 
   useEffect(() => {
     localStorage.setItem('zerodha_portfolio_data', JSON.stringify(holdings));
@@ -39,6 +40,40 @@ function App() {
       })
       .catch(() => setGatewayStatus('OFFLINE'));
   }, []);
+
+  // Fetch Live Stock Market Quotes Every 30s
+  useEffect(() => {
+    if (!holdings || holdings.length === 0) return;
+    const updateQuotes = async () => {
+      try {
+        const symbols = holdings.map(h => h.symbol);
+        const response = await fetch(`${GATEWAY_URL}/api/quote`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbols })
+        });
+        if (response.ok) {
+          const result = await response.json();
+          if (result.quotes && Object.keys(result.quotes).length > 0) {
+            setLiveSyncStatus('LIVE');
+            setHoldings(prev => prev.map(h => {
+              const q = result.quotes[h.symbol];
+              if (q && q.price > 0) {
+                return { ...h, ltp: q.price, dayChange: q.dayChange, dayChangePercent: q.dayChangePercent };
+              }
+              return h;
+            }));
+          }
+        }
+      } catch (e) {
+        setLiveSyncStatus('LOCAL');
+      }
+    };
+
+    updateQuotes();
+    const interval = setInterval(updateQuotes, 30000);
+    return () => clearInterval(interval);
+  }, [holdings.length]);
 
   const showNotification = (msg, type = 'success') => {
     setNotification({ msg, type });
@@ -198,10 +233,16 @@ function App() {
               </button>
 
               <div className={`px-3 py-2 rounded-xl border text-xs font-medium flex items-center gap-2 ${
-                gatewayStatus === 'ONLINE' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+                liveSyncStatus === 'LIVE' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-cyan-500/10 border-cyan-500/20 text-cyan-300'
               }`}>
                 <span className="pulse-dot"></span>
-                <span>Microservices: {gatewayStatus === 'ONLINE' ? 'API Gateway Connected (:5000)' : 'Client-Side Mode'}</span>
+                <span>Market Prices: {liveSyncStatus === 'LIVE' ? '🟢 Live NSE Syncing' : 'Statement Prices'}</span>
+              </div>
+
+              <div className={`px-3 py-2 rounded-xl border text-xs font-medium flex items-center gap-2 ${
+                gatewayStatus === 'ONLINE' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-slate-800/80 border-slate-700 text-slate-300'
+              }`}>
+                <span>Mode: {gatewayStatus === 'ONLINE' ? 'API Gateway (:5000)' : 'Serverless / Client Mode'}</span>
               </div>
             </div>
           </div>

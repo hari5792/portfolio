@@ -1,4 +1,10 @@
 {
   "cleanUrls": true,
-  "trailingSlash": false
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/api/parse", "destination": "/api/parse.js" },
+    { "source": "/api/analytics", "destination": "/api/analytics.js" },
+    { "source": "/api/recommendations", "destination": "/api/recommendations.js" },
+    { "source": "/api/quote", "destination": "/api/quote.js" }
+  ]
 }
