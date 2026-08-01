@@ -67,34 +67,49 @@ function App() {
     }
   };
 
-  const handleClearAll = () => {
-    if (confirm("Clear all holdings? You can re-upload your Zerodha CSV anytime.")) {
-      setHoldings([]);
-      showNotification("All holdings cleared.", "info");
-    }
-  };
-
-  const handleCSVUpload = (e) => {
+  const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = function(evt) {
-      try {
-        const text = evt.target.result;
-        const parsed = window.PortfolioCSVParser.parseZerodhaCSV(text);
-        if (parsed.holdings && parsed.holdings.length > 0) {
-          setHoldings(parsed.holdings);
-          setIsUploaderOpen(false);
-          showNotification(`Successfully imported ${parsed.holdings.length} holdings (${parsed.kiteCount} Stocks, ${parsed.coinCount} Mutual Funds)!`);
-        } else {
-          alert("No valid holdings detected in CSV file.");
+    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+
+    if (isExcel) {
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        try {
+          const arrayBuffer = evt.target.result;
+          const parsed = window.PortfolioCSVParser.parseExcelArrayBuffer(arrayBuffer);
+          if (parsed.holdings && parsed.holdings.length > 0) {
+            setHoldings(parsed.holdings);
+            setIsUploaderOpen(false);
+            showNotification(`Successfully imported ${parsed.holdings.length} holdings from Excel file (${parsed.kiteCount} Stocks, ${parsed.coinCount} MFs)!`);
+          } else {
+            alert("No valid holdings detected in Excel file.");
+          }
+        } catch (err) {
+          alert("Excel Parsing Error: " + err.message);
         }
-      } catch (err) {
-        alert("CSV Parsing Error: " + err.message);
-      }
-    };
-    reader.readAsText(file);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        try {
+          const text = evt.target.result;
+          const parsed = window.PortfolioCSVParser.parseZerodhaCSV(text);
+          if (parsed.holdings && parsed.holdings.length > 0) {
+            setHoldings(parsed.holdings);
+            setIsUploaderOpen(false);
+            showNotification(`Successfully imported ${parsed.holdings.length} holdings (${parsed.kiteCount} Stocks, ${parsed.coinCount} Mutual Funds)!`);
+          } else {
+            alert("No valid holdings detected in CSV file.");
+          }
+        } catch (err) {
+          alert("CSV Parsing Error: " + err.message);
+        }
+      };
+      reader.readAsText(file);
+    }
   };
 
   // Format currency in Indian Rupees (INR)
@@ -147,7 +162,7 @@ function App() {
                 onClick={() => setIsUploaderOpen(true)}
                 className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-medium text-sm transition shadow-lg shadow-cyan-500/25 flex items-center gap-2"
               >
-                <span>📥</span> Upload Zerodha CSV
+                <span>📥</span> Upload CSV / XLSX File
               </button>
 
               <button
@@ -267,7 +282,7 @@ function App() {
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
             }`}
           >
-            <span>📁</span> How to Export Zerodha CSV
+            <span>📁</span> How to Export Files
           </button>
         </div>
 
@@ -667,13 +682,13 @@ function App() {
           </div>
         )}
 
-        {/* TAB 4: HOW TO EXPORT ZERODHA CSV GUIDE */}
+        {/* TAB 4: HOW TO EXPORT FILES GUIDE */}
         {activeTab === 'guide' && (
           <div className="glass-card p-8 space-y-8">
             <div>
-              <h2 className="text-2xl font-bold text-white mb-2">How to Export CSV Files from Zerodha & Coin</h2>
+              <h2 className="text-2xl font-bold text-white mb-2">How to Export Files from Zerodha & Coin</h2>
               <p className="text-sm text-slate-400">
-                Follow these simple steps to download your free holdings statement from Zerodha. No developer registration or API fees required.
+                Follow these simple steps to download your free holdings statement (CSV or XLSX Excel) from Zerodha.
               </p>
             </div>
 
@@ -686,10 +701,10 @@ function App() {
                 </div>
 
                 <ol className="space-y-3 text-xs text-slate-300 list-decimal list-inside">
-                  <li>Log into <a href="https://kite.zerodha.com" target="_blank" className="text-cyan-400 underline">kite.zerodha.com</a> on laptop or desktop.</li>
-                  <li>Click on the <strong className="text-white">Holdings</strong> tab in the top navigation bar.</li>
-                  <li>In the top right corner of your holdings list, click <strong className="text-cyan-300">Download CSV</strong> (or Download statement).</li>
-                  <li>Save the `.csv` file on your computer and click the <strong className="text-cyan-300">Upload Zerodha CSV</strong> button in this dashboard!</li>
+                  <li>Log into <a href="https://kite.zerodha.com" target="_blank" className="text-cyan-400 underline">kite.zerodha.com</a> or Zerodha Console.</li>
+                  <li>Click on the <strong className="text-white">Holdings</strong> tab.</li>
+                  <li>Click <strong className="text-cyan-300">Download CSV / Excel (.xlsx)</strong> statement.</li>
+                  <li>Upload the `.csv` or `.xlsx` file directly into this dashboard!</li>
                 </ol>
               </div>
 
@@ -702,9 +717,9 @@ function App() {
 
                 <ol className="space-y-3 text-xs text-slate-300 list-decimal list-inside">
                   <li>Log into <a href="https://coin.zerodha.com" target="_blank" className="text-purple-400 underline">coin.zerodha.com</a>.</li>
-                  <li>Navigate to your <strong className="text-white">Mutual Fund Portfolio / Holdings</strong> page.</li>
-                  <li>Click on <strong className="text-purple-300">Download CSV / Excel</strong> option.</li>
-                  <li>Upload the downloaded file directly into this app. The system automatically merges your stocks and mutual funds!</li>
+                  <li>Navigate to your <strong className="text-white">Mutual Fund Holdings</strong> page.</li>
+                  <li>Click <strong className="text-purple-300">Download CSV or Excel</strong> file.</li>
+                  <li>Upload the file into this app. The system automatically detects and merges stocks and mutual funds!</li>
                 </ol>
               </div>
             </div>
@@ -712,7 +727,7 @@ function App() {
         )}
       </main>
 
-      {/* CSV UPLOADER MODAL */}
+      {/* FILE UPLOADER MODAL */}
       {isUploaderOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
           <div className="glass-card max-w-lg w-full p-6 relative border-cyan-500/30">
@@ -723,28 +738,28 @@ function App() {
               ✕
             </button>
 
-            <h3 className="text-xl font-bold text-white mb-2">Upload Zerodha / Coin CSV</h3>
+            <h3 className="text-xl font-bold text-white mb-2">Upload Zerodha CSV or Excel (.xlsx)</h3>
             <p className="text-xs text-slate-400 mb-6">
-              Select your downloaded Zerodha Kite or Coin holdings CSV file. Your file will be processed 100% locally in your browser.
+              Select your Zerodha Kite or Coin holdings file (`.csv`, `.xlsx`, or `.xls`). Processed 100% locally in your browser.
             </p>
 
             <div className="border-2 border-dashed border-slate-700 hover:border-cyan-500/60 rounded-2xl p-8 text-center bg-slate-900/50 transition cursor-pointer">
               <input
                 type="file"
-                accept=".csv,.txt"
-                onChange={handleCSVUpload}
+                accept=".csv,.xlsx,.xls,.txt"
+                onChange={handleFileUpload}
                 className="hidden"
-                id="csv-file-input"
+                id="file-input"
               />
-              <label htmlFor="csv-file-input" className="cursor-pointer">
+              <label htmlFor="file-input" className="cursor-pointer">
                 <div className="text-4xl mb-3">📁</div>
-                <div className="text-sm font-semibold text-white mb-1">Click to select CSV File</div>
-                <div className="text-xs text-slate-400">Supports Kite Holdings CSV & Coin Mutual Fund CSV</div>
+                <div className="text-sm font-semibold text-white mb-1">Click to select CSV or Excel (.xlsx) File</div>
+                <div className="text-xs text-cyan-400/80 font-mono">Accepts .csv, .xlsx, .xls</div>
               </label>
             </div>
 
             <div className="mt-6 flex items-center justify-between text-xs text-slate-400">
-              <span>🔒 100% Private - No data sent to any server</span>
+              <span>🔒 100% Private - Processed entirely offline</span>
               <button
                 onClick={() => setIsUploaderOpen(false)}
                 className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium"
