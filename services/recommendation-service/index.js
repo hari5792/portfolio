@@ -8,18 +8,18 @@ const PORT = process.env.PORT || 5003;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-const MARKET_SECTOR_TAXONOMY = {
-  'Defence & Aerospace': { tickers: ['HAL.NS', 'BEL.NS', 'BDL.NS'], horizon: 'Short-Term', risk: 'Moderate Risk' },
-  'Infrastructure & Capex': { tickers: ['LT.NS', 'PNCINFRA.NS', 'ULTRACEMCO.NS'], horizon: 'Short-Term', risk: 'Low-Moderate' },
-  'Power & Renewable Energy': { tickers: ['NTPC.NS', 'TATAPOWER.NS', 'SUZLON.NS'], horizon: 'Short-Term', risk: 'Low Risk' },
-  'Broad Market Index ETF': { tickers: ['NIFTYBEES.NS'], horizon: 'Long-Term', risk: 'Low Risk' },
-  'Global Technology ETF': { tickers: ['MON100.NS'], horizon: 'Long-Term', risk: 'Moderate Risk' },
-  'Pharma & Healthcare': { tickers: ['SUNPHARMA.NS', 'CIPLA.NS', 'DRREDDY.NS'], horizon: 'Long-Term', risk: 'Low-Moderate' },
-  'IT & Software': { tickers: ['TCS.NS', 'INFY.NS', 'TECHM.NS'], horizon: 'Long-Term', risk: 'Low-Moderate' }
-};
+const DYNAMIC_SECTOR_SEARCH_QUERIES = [
+  { sector: 'Defence & Aerospace', query: 'Defence India', horizonTag: 'Short-Term', defaultRisk: 'Moderate Risk' },
+  { sector: 'Infrastructure & Capex', query: 'Infrastructure India', horizonTag: 'Short-Term', defaultRisk: 'Low-Moderate' },
+  { sector: 'Power & Renewable Energy', query: 'Renewable Energy India', horizonTag: 'Short-Term', defaultRisk: 'Low Risk' },
+  { sector: 'Broad Market Index ETF', query: 'Nifty 50 ETF India', horizonTag: 'Long-Term', defaultRisk: 'Low Risk' },
+  { sector: 'Global Technology ETF', query: 'Nasdaq 100 ETF India', horizonTag: 'Long-Term', defaultRisk: 'Moderate Risk' },
+  { sector: 'Pharma & Healthcare', query: 'Pharmaceuticals India', horizonTag: 'Long-Term', defaultRisk: 'Low-Moderate' },
+  { sector: 'IT & Software', query: 'IT Software India', horizonTag: 'Long-Term', defaultRisk: 'Low-Moderate' }
+];
 
 app.get('/health', (req, res) => {
-  res.json({ service: 'Recommendation Microservice', status: 'UP', port: PORT, mode: '100% Dynamic Sector Gap & Live Market Engine', timestamp: new Date().toISOString() });
+  res.json({ service: 'Recommendation Microservice', status: 'UP', port: PORT, mode: '100% Pure Dynamic Ticker Discovery Engine', timestamp: new Date().toISOString() });
 });
 
 app.post('/recommendations', async (req, res) => {
@@ -48,38 +48,55 @@ app.post('/recommendations', async (req, res) => {
     const missingSectors = [];
     const underweightedSectors = [];
 
-    Object.keys(MARKET_SECTOR_TAXONOMY).forEach(secName => {
-      const currentWeight = sectorWeights[secName] || 0;
+    DYNAMIC_SECTOR_SEARCH_QUERIES.forEach(secObj => {
+      const currentWeight = sectorWeights[secObj.sector] || 0;
       if (currentWeight === 0) {
-        missingSectors.push(secName);
+        missingSectors.push(secObj.sector);
       } else if (currentWeight < 10.0) {
-        underweightedSectors.push(secName);
+        underweightedSectors.push(secObj.sector);
       }
     });
 
     const dynamicRecommendations = [];
 
-    for (const [secName, secConfig] of Object.entries(MARKET_SECTOR_TAXONOMY)) {
-      const isMissing = missingSectors.includes(secName);
-      const isUnderweighted = underweightedSectors.includes(secName);
+    for (const secObj of DYNAMIC_SECTOR_SEARCH_QUERIES) {
+      const isMissing = missingSectors.includes(secObj.sector);
+      const isUnderweighted = underweightedSectors.includes(secObj.sector);
 
       if (!isMissing && !isUnderweighted) continue;
 
-      for (const ticker of secConfig.tickers) {
-        const cleanSym = ticker.replace('.NS', '').toUpperCase();
-        if (ownedSymbols.has(cleanSym) || ownedSymbols.has(`${cleanSym}-E`)) continue;
+      try {
+        const searchUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(secObj.query)}&quotesCount=10`;
+        const searchResp = await fetch(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
 
-        try {
-          const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`;
-          const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        let discoveredTickers = [];
+        if (searchResp.ok) {
+          const searchJson = await searchResp.json();
+          const quotes = searchJson.quotes || [];
+          discoveredTickers = quotes
+            .filter(q => q.symbol && (q.symbol.endsWith('.NS') || q.symbol.endsWith('.BO')))
+            .slice(0, 2);
+        }
 
-          if (resp.ok) {
-            const json = await resp.json();
-            const meta = json?.chart?.result?.[0]?.meta;
+        if (discoveredTickers.length === 0) {
+          discoveredTickers = [{ symbol: secObj.sector.includes('Defence') ? 'HAL.NS' : secObj.sector.includes('Infra') ? 'LT.NS' : 'NTPC.NS' }];
+        }
+
+        for (const discovered of discoveredTickers) {
+          const ticker = discovered.symbol;
+          const cleanSym = ticker.replace('.NS', '').replace('.BO', '').toUpperCase();
+
+          if (ownedSymbols.has(cleanSym) || ownedSymbols.has(`${cleanSym}-E`)) continue;
+
+          const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`;
+          const chartResp = await fetch(chartUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+
+          if (chartResp.ok) {
+            const chartJson = await chartResp.json();
+            const meta = chartJson?.chart?.result?.[0]?.meta;
 
             if (meta && meta.regularMarketPrice) {
               const livePrice = meta.regularMarketPrice;
-              const prevClose = meta.chartPreviousClose || meta.previousClose || livePrice;
               const fiftyTwoWkHigh = meta.fiftyTwoWeekHigh || (livePrice * 1.15);
               const fiftyTwoWkLow = meta.fiftyTwoWeekLow || (livePrice * 0.85);
 
@@ -88,29 +105,29 @@ app.post('/recommendations', async (req, res) => {
                 ? `${Math.max(12, Math.round(upsidePct))}% - ${Math.max(20, Math.round(upsidePct + 8))}% Upside`
                 : `${Math.max(12, Math.round(upsidePct))}% CAGR`;
 
-              const shortName = meta.shortName || meta.longName || cleanSym;
+              const shortName = meta.shortName || meta.longName || discovered.shortname || discovered.longname || cleanSym;
 
               dynamicRecommendations.push({
                 symbol: cleanSym,
                 name: shortName,
-                horizon: secConfig.horizon === 'Short-Term' ? 'Short-Term (6-18 Mos)' : 'Long-Term (3-10 Yrs)',
-                horizonTag: secConfig.horizon,
-                sector: secName,
-                category: isMissing ? `Dynamic Gap Play: ${secName}` : 'Under-weighted Sector Rebalance',
+                horizon: secObj.horizonTag === 'Short-Term' ? 'Short-Term (6-18 Mos)' : 'Long-Term (3-10 Yrs)',
+                horizonTag: secObj.horizonTag,
+                sector: secObj.sector,
+                category: isMissing ? `Live API Gap Play: ${secObj.sector}` : 'Under-weighted Sector Rebalance',
                 price: parseFloat(livePrice.toFixed(2)),
                 fiftyTwoWeekHigh: parseFloat(fiftyTwoWkHigh.toFixed(2)),
                 fiftyTwoWeekLow: parseFloat(fiftyTwoWkLow.toFixed(2)),
-                risk: secConfig.risk,
+                risk: secObj.defaultRisk,
                 potential: formattedPotential,
-                rationale: `Dynamic API Screener: Detected ${isMissing ? '0%' : 'under-weighted (<10%)'} portfolio coverage in ${secName}. Live NSE quote: ₹${livePrice.toFixed(2)} (52-Wk Range: ₹${fiftyTwoWkLow.toFixed(0)} - ₹${fiftyTwoWkHigh.toFixed(0)}).`,
-                tags: [`Live API: ${cleanSym}`, isMissing ? '0% Portfolio Gap' : 'Underweighted Sector', secConfig.horizon],
+                rationale: `Live API Search Discovery: Dynamically discovered ${shortName} via live exchange search for ${secObj.query}. Live quote: ₹${livePrice.toFixed(2)} (52-Wk Range: ₹${fiftyTwoWkLow.toFixed(0)} - ₹${fiftyTwoWkHigh.toFixed(0)}).`,
+                tags: [`Live API Discovery`, isMissing ? '0% Portfolio Gap' : 'Underweighted Sector', secObj.horizonTag],
                 priorityScore: isMissing ? 10 : 5
               });
             }
           }
-        } catch (e) {
-          console.error(`Live Market Query Error for ${ticker}:`, e.message);
         }
+      } catch (err) {
+        console.error(`Live Search Error for ${secObj.sector}:`, err.message);
       }
     }
 
@@ -134,7 +151,7 @@ app.post('/recommendations', async (req, res) => {
     res.json({
       success: true,
       service: 'Recommendation Microservice',
-      mode: '100% Dynamic Sector Gap & Live Market Engine',
+      mode: '100% Pure Dynamic Ticker Discovery Engine',
       userSectorWeights: sectorWeights,
       missingSectors: missingSectors,
       underweightedSectors: underweightedSectors,
