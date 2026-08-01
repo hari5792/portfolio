@@ -1,4 +1,4 @@
-// Intelligent Zerodha Kite & Coin CSV & XLSX Excel Parser (Bulletproof Header Auto-Detection)
+// Intelligent Zerodha Kite & Coin CSV & XLSX Excel Parser (Bulletproof Multi-Sheet & Header Auto-Detection)
 (function() {
   window.PortfolioCSVParser = {
     // Parse XLSX / XLS Excel ArrayBuffer
@@ -12,11 +12,11 @@
         throw new Error("Excel workbook has no sheets.");
       }
 
-      // Check all sheets or start with the first sheet
       let bestHoldings = [];
       let bestKite = 0;
       let bestCoin = 0;
 
+      // Scan all sheets in the workbook
       for (let s = 0; s < workbook.SheetNames.length; s++) {
         const sheetName = workbook.SheetNames[s];
         const worksheet = workbook.Sheets[sheetName];
@@ -50,7 +50,7 @@
         throw new Error("CSV Parser engine (PapaParse) is missing.");
       }
 
-      // First parse as 2D array to skip title lines
+      // First parse as 2D array to handle metadata lines
       const results2D = window.Papa.parse(csvText, {
         header: false,
         skipEmptyLines: true
@@ -78,58 +78,56 @@
     }
   };
 
-  // Process 2D Array Grid (Handles metadata/title lines at the top of Excel/CSV)
+  // Process 2D Array Grid (Handles title lines, metadata, merged headers, and Zerodha Console layouts)
   function process2DGrid(grid) {
     let headerRowIndex = -1;
     let symbolColIdx = -1;
     let qtyColIdx = -1;
     let avgCostColIdx = -1;
     let ltpColIdx = -1;
-    let investedColIdx = -1;
-    let curValColIdx = -1;
+    let presValColIdx = -1;
+    let sectorColIdx = -1;
 
-    const symbolKeywords = ['instrument', 'symbol', 'trading symbol', 'scheme name', 'scheme', 'stock', 'particulars', 'isin', 'security', 'fund name'];
-    const qtyKeywords = ['qty.', 'qty', 'quantity', 'units', 'holding qty', 'available qty', 'balance'];
-    const avgCostKeywords = ['avg. cost', 'avg cost', 'buy price', 'buy avg', 'avg. nav', 'avg nav', 'avg price', 'cost price', 'average price'];
-    const ltpKeywords = ['ltp', 'current price', 'current nav', 'nav', 'last price', 'cur. price', 'market price', 'closing price'];
-    const investedKeywords = ['invested', 'invested value', 'total cost', 'cost value'];
-    const curValKeywords = ['cur. val', 'current value', 'market value'];
+    const symbolKeywords = ['symbol', 'instrument', 'trading symbol', 'scheme name', 'scheme', 'stock', 'particulars', 'isin', 'security'];
+    const qtyKeywords = ['quantity', 'qty.', 'qty', 'units', 'quantity available', 'holding qty', 'available qty', 'balance'];
+    const avgCostKeywords = ['average price', 'avg. cost', 'avg cost', 'buy price', 'buy avg', 'avg. nav', 'avg nav', 'avg price', 'cost price'];
+    const ltpKeywords = ['ltp', 'current price', 'current nav', 'nav', 'last price', 'previous closing price', 'closing price', 'cur. price'];
+    const presValKeywords = ['present value', 'cur. val', 'current value', 'market value'];
 
-    // Search for header row in top 20 rows
-    for (let r = 0; r < Math.min(20, grid.length); r++) {
+    // Search for header row in top 100 rows
+    for (let r = 0; r < Math.min(100, grid.length); r++) {
       const row = grid[r];
       if (!Array.isArray(row)) continue;
 
-      let symIdx = -1, qIdx = -1, costIdx = -1, ltpIdx = -1, invIdx = -1, curIdx = -1;
+      let symIdx = -1, qIdx = -1, costIdx = -1, ltpIdx = -1, pValIdx = -1, secIdx = -1;
 
       row.forEach((cell, c) => {
         if (!cell) return;
         const str = String(cell).trim().toLowerCase();
 
-        if (symIdx === -1 && symbolKeywords.some(k => str.includes(k))) symIdx = c;
-        if (qIdx === -1 && qtyKeywords.some(k => str.includes(k))) qIdx = c;
-        if (costIdx === -1 && avgCostKeywords.some(k => str.includes(k))) costIdx = c;
-        if (ltpIdx === -1 && ltpKeywords.some(k => str.includes(k))) ltpIdx = c;
-        if (invIdx === -1 && investedKeywords.some(k => str.includes(k))) invIdx = c;
-        if (curIdx === -1 && curValKeywords.some(k => str.includes(k))) curIdx = c;
+        if (symIdx === -1 && symbolKeywords.some(k => str === k || str.includes(k))) symIdx = c;
+        if (qIdx === -1 && qtyKeywords.some(k => str === k || str.includes(k))) qIdx = c;
+        if (costIdx === -1 && avgCostKeywords.some(k => str === k || str.includes(k))) costIdx = c;
+        if (ltpIdx === -1 && ltpKeywords.some(k => str === k || str.includes(k))) ltpIdx = c;
+        if (pValIdx === -1 && presValKeywords.some(k => str === k || str.includes(k))) pValIdx = c;
+        if (secIdx === -1 && str.includes('sector')) secIdx = c;
       });
 
-      // Header row must have at least symbol and (qty or avgCost or ltp)
-      if (symIdx !== -1 && (qIdx !== -1 || costIdx !== -1 || ltpIdx !== -1)) {
+      // Header row found if symbol and at least one numeric header exist
+      if (symIdx !== -1 && (qIdx !== -1 || costIdx !== -1 || ltpIdx !== -1 || pValIdx !== -1)) {
         headerRowIndex = r;
         symbolColIdx = symIdx;
         qtyColIdx = qIdx;
         avgCostColIdx = costIdx;
         ltpColIdx = ltpIdx;
-        investedColIdx = invIdx;
-        curValColIdx = curIdx;
+        presValColIdx = pValIdx;
+        sectorColIdx = secIdx;
         break;
       }
     }
 
     if (headerRowIndex === -1) {
-      // Fallback: search for first row where column 0 or 1 looks like a ticker/stock
-      return processRawObjects([]);
+      return { holdings: [], kiteCount: 0, coinCount: 0 };
     }
 
     const parsedHoldings = [];
@@ -141,41 +139,69 @@
       if (!Array.isArray(row)) continue;
 
       const rawSym = symbolColIdx !== -1 ? row[symbolColIdx] : '';
-      if (!rawSym || String(rawSym).toLowerCase().includes('total')) continue;
+      if (!rawSym) continue;
 
       const symStr = String(rawSym).trim();
-      const rawQty = qtyColIdx !== -1 ? row[qtyColIdx] : 0;
-      const qty = parseFloat(cleanNumber(rawQty));
-      if (isNaN(qty) || qty <= 0) continue;
+      const lowerSym = symStr.toLowerCase();
 
+      // Skip non-stock header/total lines
+      if (
+        lowerSym.includes('total') ||
+        lowerSym.includes('summary') ||
+        lowerSym.includes('statement') ||
+        lowerSym.includes('client id') ||
+        lowerSym.includes('unrealized') ||
+        lowerSym.includes('previous closing') ||
+        lowerSym === 'symbol'
+      ) continue;
+
+      // Extract numbers safely from mapped or nearby columns
+      let qty = qtyColIdx !== -1 ? parseFloat(cleanNumber(row[qtyColIdx])) : 0;
       let avgCost = avgCostColIdx !== -1 ? parseFloat(cleanNumber(row[avgCostColIdx])) : 0;
       let ltp = ltpColIdx !== -1 ? parseFloat(cleanNumber(row[ltpColIdx])) : 0;
-      const invested = investedColIdx !== -1 ? parseFloat(cleanNumber(row[investedColIdx])) : 0;
-      const curVal = curValColIdx !== -1 ? parseFloat(cleanNumber(row[curValColIdx])) : 0;
+      let presVal = presValColIdx !== -1 ? parseFloat(cleanNumber(row[presValColIdx])) : 0;
 
-      // Fallbacks if cost or ltp missing
-      if ((isNaN(avgCost) || avgCost <= 0) && invested > 0 && qty > 0) {
-        avgCost = invested / qty;
+      // Auto-fallback: if mapped Qty column is 0 or NaN, scan row cells after symbol for first valid numbers
+      if (isNaN(qty) || qty <= 0) {
+        for (let c = symbolColIdx + 1; c < row.length; c++) {
+          const num = parseFloat(cleanNumber(row[c]));
+          if (!isNaN(num) && num > 0) {
+            qty = num;
+            break;
+          }
+        }
       }
-      if ((isNaN(ltp) || ltp <= 0) && curVal > 0 && qty > 0) {
-        ltp = curVal / qty;
+
+      if (isNaN(qty) || qty <= 0) continue;
+
+      // Calculate LTP from Present Value if available
+      if ((isNaN(ltp) || ltp <= 0) && presVal > 0 && qty > 0) {
+        ltp = presVal / qty;
       }
       if (isNaN(ltp) || ltp <= 0) ltp = avgCost;
       if (isNaN(avgCost) || avgCost <= 0) avgCost = ltp;
 
       if (avgCost <= 0 && ltp <= 0) continue;
 
-      const isMutualFund = symStr.toLowerCase().includes('fund') || symStr.toLowerCase().includes('direct') || symStr.toLowerCase().includes('growth') || symStr.toLowerCase().includes('mf');
-
+      // Detect sector from file row or symbol rules
       let sector = 'General';
+      if (sectorColIdx !== -1 && row[sectorColIdx] && String(row[sectorColIdx]).trim() !== '') {
+        const rowSector = String(row[sectorColIdx]).trim();
+        if (!rowSector.match(/^\d+$/) && rowSector.length > 2) {
+          sector = rowSector;
+        }
+      }
+
+      const isMutualFund = lowerSym.includes('fund') || lowerSym.includes('direct') || lowerSym.includes('growth') || lowerSym.includes('mf') || lowerSym.includes('index');
+
       let marketCap = 'Multi Cap';
 
       if (isMutualFund) {
         coinCount++;
-        sector = categorizeMFSector(symStr);
+        if (sector === 'General') sector = categorizeMFSector(symStr);
       } else {
         kiteCount++;
-        sector = categorizeStockSector(symStr);
+        if (sector === 'General') sector = categorizeStockSector(symStr);
         marketCap = estimateMarketCap(symStr);
       }
 
@@ -215,9 +241,9 @@
       if (!symbol || String(symbol).toLowerCase().includes('total')) return;
 
       const symStr = String(symbol).trim();
-      const qty = parseFloat(cleanNumber(cleanedRow['qty.'] || cleanedRow['qty'] || cleanedRow['quantity'] || cleanedRow['units'] || '0'));
-      const avgCost = parseFloat(cleanNumber(cleanedRow['avg. cost'] || cleanedRow['avg cost'] || cleanedRow['buy price'] || cleanedRow['avg. nav'] || cleanedRow['avg nav'] || cleanedRow['buy avg'] || '0'));
-      const ltp = parseFloat(cleanNumber(cleanedRow['ltp'] || cleanedRow['current price'] || cleanedRow['current nav'] || cleanedRow['nav'] || cleanedRow['last price'] || '0'));
+      const qty = parseFloat(cleanNumber(cleanedRow['qty.'] || cleanedRow['qty'] || cleanedRow['quantity'] || cleanedRow['units'] || cleanedRow['quantity available'] || '0'));
+      const avgCost = parseFloat(cleanNumber(cleanedRow['avg. cost'] || cleanedRow['avg cost'] || cleanedRow['buy price'] || cleanedRow['avg. nav'] || cleanedRow['avg nav'] || cleanedRow['buy avg'] || cleanedRow['average price'] || '0'));
+      const ltp = parseFloat(cleanNumber(cleanedRow['ltp'] || cleanedRow['current price'] || cleanedRow['current nav'] || cleanedRow['nav'] || cleanedRow['last price'] || cleanedRow['previous closing price'] || '0'));
 
       if (qty <= 0) return;
 
@@ -266,14 +292,15 @@
     const sym = symbol.toUpperCase();
     if (['RELIANCE', 'BPCL', 'IOC', 'ONGC', 'GAIL', 'HINDPETRO'].some(s => sym.includes(s))) return 'Energy & Oil';
     if (['TCS', 'INFY', 'WIPRO', 'HCLTECH', 'TECHM', 'LTIM', 'PERSISTENT', 'COFORGE', 'OFSS'].some(s => sym.includes(s))) return 'IT & Software';
-    if (['HDFCBANK', 'ICICIBANK', 'SBIN', 'KOTAKBANK', 'AXISBANK', 'INDUSINDBK', 'FEDERALBNK', 'BANKBARODA', 'YESBANK', 'IDFCFIRSTB'].some(s => sym.includes(s))) return 'Banking & Financials';
-    if (['TATAMOTORS', 'M&M', 'MARUTI', 'HEROMOTOCO', 'EICHERMOT', 'BAJAJ-AUTO', 'ASHOKLEY', 'TVSMOTOR'].some(s => sym.includes(s))) return 'Automobile & EV';
+    if (['HDFCBANK', 'ICICIBANK', 'SBIN', 'KOTAKBANK', 'AXISBANK', 'INDUSINDBK', 'FEDERALBNK', 'BANKBARODA', 'YESBANK', 'IDFCFIRSTB', 'KTKBANK', 'SOUTHBANK', 'MANAPPURAM', 'BAJAJHFL'].some(s => sym.includes(s))) return 'Banking & Financials';
+    if (['TATAMOTORS', 'M&M', 'MARUTI', 'HEROMOTOCO', 'EICHERMOT', 'BAJAJ-AUTO', 'ASHOKLEY', 'TVSMOTOR', 'TMCV', 'TMPV'].some(s => sym.includes(s))) return 'Automobile & EV';
     if (['SUZLON', 'TATAPOWER', 'NTPC', 'POWERGRID', 'ADANIPOWER', 'IREDA', 'NHPC', 'JSWENERGY'].some(s => sym.includes(s))) return 'Renewable Energy';
     if (['HAL', 'BEL', 'BDL', 'MAZDOCK', 'COCHINSHIP', 'DATA-PATTERNS'].some(s => sym.includes(s))) return 'Defence & Aerospace';
     if (['ITC', 'HINDUNILVR', 'NESTLEIND', 'BRITANNIA', 'TATACONSUM', 'DABUR', 'MARICO', 'GODREJCP'].some(s => sym.includes(s))) return 'FMCG';
-    if (['PAYTM', 'POLICYBZR', 'NYKAA', 'ZOMATO', 'DELHIVERY'].some(s => sym.includes(s))) return 'Fintech & Digital';
+    if (['PAYTM', 'POLICYBZR', 'NYKAA', 'ZOMATO', 'DELHIVERY', 'GROWW'].some(s => sym.includes(s))) return 'Fintech & Digital';
     if (['SUNPHARMA', 'DRREDDY', 'CIPLA', 'APOLLOHOSP', 'DIVISLAB', 'MANKIND', 'LUPIN'].some(s => sym.includes(s))) return 'Pharma & Healthcare';
     if (['TATASTEEL', 'JINDALSTEL', 'HINDALCO', 'SAIL', 'NATIONALUM', 'VEDL'].some(s => sym.includes(s))) return 'Metals & Mining';
+    if (['GOLDBEES', 'GOLDCASE', 'ITBEES', 'MON100', 'BEES', 'ETF'].some(s => sym.includes(s))) return 'Index & Commodity ETF';
     if (['LT', 'ULTRACETCO', 'GRASIM', 'SIEMENS', 'ABB', 'ADANIENT', 'PNCINFRA'].some(s => sym.includes(s))) return 'Infrastructure & Capital Goods';
     return 'Other Stocks';
   }
@@ -290,9 +317,9 @@
 
   function estimateMarketCap(symbol) {
     const sym = symbol.toUpperCase();
-    const largeCaps = ['RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY', 'BHARTIARTL', 'ITC', 'SBIN', 'LTIM', 'TATAMOTORS', 'HINDUNILVR', 'BAJFINANCE', 'HAL', 'LT', 'SUNPHARMA', 'AXISBANK', 'MARUTI', 'NTPC', 'ONGC', 'KOTAKBANK'];
+    const largeCaps = ['RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY', 'BHARTIARTL', 'ITC', 'SBIN', 'LTIM', 'TATAMOTORS', 'HINDUNILVR', 'BAJFINANCE', 'HAL', 'LT', 'SUNPHARMA', 'AXISBANK', 'MARUTI', 'NTPC', 'ONGC', 'KOTAKBANK', 'TATASTEEL'];
     if (largeCaps.some(s => sym.includes(s))) return 'Large Cap';
-    const midCaps = ['SUZLON', 'PAYTM', 'YESBANK', 'YES BANK', 'POLYCAB', 'IRFC', 'RVNL', 'FEDERALBNK', 'PERSISTENT', 'COFORGE'];
+    const midCaps = ['SUZLON', 'PAYTM', 'YESBANK', 'YES BANK', 'POLYCAB', 'IRFC', 'RVNL', 'FEDERALBNK', 'PERSISTENT', 'COFORGE', 'KTKBANK', 'MANAPPURAM', 'BAJAJHFL'];
     if (midCaps.some(s => sym.includes(s))) return 'Mid Cap';
     return 'Small / Micro Cap';
   }
