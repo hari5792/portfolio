@@ -193,13 +193,19 @@
         'Index Fund / ETF'
       ];
 
+      const ownedSymbols = new Set(holdings.map(h => h.symbol.toUpperCase().replace('-E', '').replace('.NS', '')));
       const currentSectors = new Set(holdings.map(h => h.sector));
       const sectorGaps = allMajorSectors.filter(sec => !currentSectors.has(sec));
+
+      const filteredExternalIdeas = (window.EXTERNAL_RECOMMENDATIONS || []).filter(item => {
+        const clean = item.symbol.toUpperCase();
+        return !ownedSymbols.has(clean) && !ownedSymbols.has(`${clean}-E`);
+      });
 
       return {
         averageDownCandidates: averageDownCandidates.sort((a, b) => a.pnlPercent - b.pnlPercent),
         sectorGaps: sectorGaps,
-        externalIdeas: window.EXTERNAL_RECOMMENDATIONS || []
+        externalIdeas: filteredExternalIdeas
       };
     },
 
