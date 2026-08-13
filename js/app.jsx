@@ -89,8 +89,42 @@ function App() {
     return window.PortfolioAnalytics.getLossDiagnostics(holdings);
   }, [holdings]);
 
-  const reinvestOpportunities = useMemo(() => {
-    return window.PortfolioAnalytics.getReinvestmentOpportunities(holdings);
+  const [reinvestOpportunities, setReinvestOpportunities] = useState({
+    averageDownCandidates: [],
+    sectorGaps: [],
+    externalIdeas: window.EXTERNAL_RECOMMENDATIONS || []
+  });
+
+  useEffect(() => {
+    if (!holdings || holdings.length === 0) {
+      setReinvestOpportunities({ averageDownCandidates: [], sectorGaps: [], externalIdeas: window.EXTERNAL_RECOMMENDATIONS || [] });
+      return;
+    }
+    
+    const fetchRecommendations = async () => {
+      try {
+        const response = await fetch(`${GATEWAY_URL}/api/recommendations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ holdings })
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          setReinvestOpportunities({
+            averageDownCandidates: result.averageDownCandidates || [],
+            sectorGaps: result.sectorGaps || [],
+            externalIdeas: result.externalIdeas || []
+          });
+        } else {
+          setReinvestOpportunities(window.PortfolioAnalytics.getReinvestmentOpportunities(holdings));
+        }
+      } catch (e) {
+        setReinvestOpportunities(window.PortfolioAnalytics.getReinvestmentOpportunities(holdings));
+      }
+    };
+    
+    fetchRecommendations();
   }, [holdings]);
 
   const sectorDistribution = useMemo(() => {
