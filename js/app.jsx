@@ -117,9 +117,11 @@ function App() {
             externalIdeas: result.externalIdeas || []
           });
         } else {
+          showNotification('Warning: Live Market API is unavailable (Vercel Authentication Protected). Using local offline mode.', 'error');
           setReinvestOpportunities(window.PortfolioAnalytics.getReinvestmentOpportunities(holdings));
         }
       } catch (e) {
+        showNotification('Warning: Network error fetching live market recommendations. Using local offline mode.', 'error');
         setReinvestOpportunities(window.PortfolioAnalytics.getReinvestmentOpportunities(holdings));
       }
     };
