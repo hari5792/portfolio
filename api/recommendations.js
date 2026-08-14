@@ -1,4 +1,4 @@
-const fetch = require('node-fetch');
+// Native fetch is available in Node 18+ (Vercel Default)
 
 // 100% PURE DYNAMIC MARKET API RECOMMENDATION ENGINE
 // ZERO HARDCODED STOCK TICKERS (No HAL, LT, NTPC, TCS, etc. written in code)

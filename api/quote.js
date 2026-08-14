@@ -1,4 +1,4 @@
-const fetch = require('node-fetch');
+// Native fetch is available in Node 18+ (Vercel Default)
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', true);
