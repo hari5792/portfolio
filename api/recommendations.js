@@ -60,44 +60,44 @@ module.exports = async (req, res) => {
     });
 
     // 3. DYNAMICALLY DISCOVER TICKERS VIA LIVE SEARCH API (ZERO HARDCODED TICKERS)
-    const dynamicRecommendations = [];
-
-    for (const secObj of DYNAMIC_SECTOR_SEARCH_QUERIES) {
+    const fetchSectorRecommendations = async (secObj) => {
       const isMissing = missingSectors.includes(secObj.sector);
       const isUnderweighted = underweightedSectors.includes(secObj.sector);
-
-      if (!isMissing && !isUnderweighted) continue; // Skip sectors user already has heavy weight in
+      if (!isMissing && !isUnderweighted) return [];
 
       try {
-        // Query Live Search API for the sector query string
-        const searchUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(secObj.query)}&quotesCount=10`;
+        const searchUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(secObj.query)}&quotesCount=5`;
         const searchResp = await fetch(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
 
         let discoveredTickers = [];
         if (searchResp.ok) {
           const searchJson = await searchResp.json();
           const quotes = searchJson.quotes || [];
-          // Filter for Indian stock exchange tickers (.NS or .BO)
           discoveredTickers = quotes
             .filter(q => q.symbol && (q.symbol.endsWith('.NS') || q.symbol.endsWith('.BO')))
-            .slice(0, 2); // Take top 2 live discovered tickers
+            .slice(0, 1); // Take top 1 live discovered ticker per sector to stay well under 10s timeout
         }
 
-        // Fallback search terms if live search API returns empty
         if (discoveredTickers.length === 0) {
-          discoveredTickers = [{ symbol: secObj.sector.includes('Defence') ? 'HAL.NS' : secObj.sector.includes('Infra') ? 'LT.NS' : 'NTPC.NS' }];
+          let fallback = 'RELIANCE.NS';
+          if (secObj.sector.includes('Defence')) fallback = 'HAL.NS';
+          else if (secObj.sector.includes('Infra')) fallback = 'LT.NS';
+          else if (secObj.sector.includes('Power')) fallback = 'NTPC.NS';
+          else if (secObj.sector.includes('IT')) fallback = 'TCS.NS';
+          else if (secObj.sector.includes('Pharma')) fallback = 'SUNPHARMA.NS';
+          else if (secObj.sector.includes('Tech')) fallback = 'MON100.BO';
+          else if (secObj.sector.includes('Index')) fallback = 'NIFTYBEES.NS';
+          
+          discoveredTickers = [{ symbol: fallback }];
         }
 
+        const sectorRecs = [];
         for (const discovered of discoveredTickers) {
           const ticker = discovered.symbol;
           const cleanSym = ticker.replace('.NS', '').replace('.BO', '').toUpperCase();
 
-          // Dynamically skip if user ALREADY owns this stock in their uploaded file
-          if (ownedSymbols.has(cleanSym) || ownedSymbols.has(`${cleanSym}-E`)) {
-            continue;
-          }
+          if (ownedSymbols.has(cleanSym) || ownedSymbols.has(`${cleanSym}-E`)) continue;
 
-          // Fetch Live Market Quotes & 52-Wk Metrics for discovered ticker
           const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`;
           const chartResp = await fetch(chartUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
 
@@ -110,7 +110,6 @@ module.exports = async (req, res) => {
               const fiftyTwoWkHigh = meta.fiftyTwoWeekHigh || (livePrice * 1.15);
               const fiftyTwoWkLow = meta.fiftyTwoWeekLow || (livePrice * 0.85);
 
-              // Dynamically compute upside percentage relative to 52-week high
               const upsidePct = livePrice > 0 ? (((fiftyTwoWkHigh - livePrice) / livePrice) * 100) : 15;
               const formattedPotential = isMissing
                 ? `${Math.max(12, Math.round(upsidePct))}% - ${Math.max(20, Math.round(upsidePct + 8))}% Upside`
@@ -118,7 +117,7 @@ module.exports = async (req, res) => {
 
               const shortName = meta.shortName || meta.longName || discovered.shortname || discovered.longname || cleanSym;
 
-              dynamicRecommendations.push({
+              sectorRecs.push({
                 symbol: cleanSym,
                 name: shortName,
                 horizon: secObj.horizonTag === 'Short-Term' ? 'Short-Term (6-18 Mos)' : 'Long-Term (3-10 Yrs)',
@@ -137,10 +136,17 @@ module.exports = async (req, res) => {
             }
           }
         }
+        return sectorRecs;
       } catch (err) {
         console.error(`Live Search Error for ${secObj.sector}:`, err.message);
+        return [];
       }
-    }
+    };
+
+    // Run all sector queries in parallel to avoid Vercel 10s Serverless timeout
+    const sectorPromises = DYNAMIC_SECTOR_SEARCH_QUERIES.map(fetchSectorRecommendations);
+    const results = await Promise.all(sectorPromises);
+    const dynamicRecommendations = results.flat();
 
     // 4. DYNAMIC IN-PORTFOLIO AVERAGE DOWN CALCULATIONS
     const averageDownCandidates = [];
