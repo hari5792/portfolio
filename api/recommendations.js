@@ -189,8 +189,13 @@ module.exports = async (req, res) => {
         if (aiResp.ok) {
           const aiJson = await aiResp.json();
           aiInsight = aiJson.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/\n/g, ' ') || null;
+        } else {
+          const errJson = await aiResp.json().catch(() => ({}));
+          aiInsight = `API Key Error: Gemini rejected the request. Please verify your API key is valid. (Code: ${aiResp.status})`;
+          console.error("Gemini API Error:", aiResp.status, errJson);
         }
       } catch(e) {
+        aiInsight = `Network Error: Could not connect to Gemini API (${e.message}).`;
         console.error("AI Insight Error:", e.message);
       }
     }
