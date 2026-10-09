@@ -195,19 +195,36 @@ Format the response clearly with line breaks and bullet points.`;
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getModel ? genAI.getModel(targetModelStr) : genAI.getGenerativeModel({ model: targetModelStr });
 
-        const result = await model.generateContent({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
-        });
+        let result = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            result = await model.generateContent({
+              contents: [{ role: "user", parts: [{ text: prompt }] }],
+              generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
+            });
+            break; // Success
+          } catch (err) {
+            if (err.message.includes("503") && attempt < 3) {
+              console.log(`Gemini 503 High Demand (Attempt ${attempt}/3). Retrying in 2 seconds...`);
+              await new Promise(res => setTimeout(res, 2000));
+            } else {
+              throw err; // Throw on final attempt or non-503 error
+            }
+          }
+        }
 
-        const text = result.response.text();
+        const text = result?.response?.text();
         if (text) {
           aiInsight = text;
         } else {
           aiInsight = "API Error: No response generated from Gemini SDK.";
         }
       } catch(e) {
-        aiInsight = `API Key Error: Gemini SDK failed. Please verify your API key is valid. (Error: ${e.message})`;
+        if (e.message.includes("503")) {
+          aiInsight = "Google's AI Servers are currently at peak capacity (503 High Demand). Please refresh the dashboard in a few minutes to generate your customized portfolio report.";
+        } else {
+          aiInsight = `API Key Error: Gemini SDK failed. Please verify your API key is valid. (Error: ${e.message})`;
+        }
         console.error("AI Insight Error:", e.message);
       }
     }
