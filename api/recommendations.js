@@ -175,8 +175,17 @@ module.exports = async (req, res) => {
           .sort((a, b) => (b.qty * (b.ltp || b.avgCost)) - (a.qty * (a.ltp || a.avgCost)))
           .slice(0, 6)
           .map(h => `${h.symbol} (${h.sector})`);
-        
-        const prompt = `You are an expert wealth manager. The user's top holdings are: ${topHoldings.join(', ')}. They have 0% exposure to these sectors: ${missingSectors.join(', ')}. Provide a concise 2-3 sentence strategic advice on how they should reinvest their next capital injection to balance this portfolio. Focus on macro allocation. Keep it professional, direct, and under 50 words.`;
+        const prompt = `You are an expert wealth manager and financial analyst. 
+The user's top holdings are: ${topHoldings.join(', ')}. 
+They currently have 0% exposure to these sectors: ${missingSectors.join(', ')}. 
+
+Please provide a highly detailed, multi-paragraph analysis covering the following:
+1. Sector Focus: Which of the missing sectors they should focus on and why.
+2. Return Maximization: Strategic advice on how they can maximize their portfolio returns.
+3. Stock Suggestions: Suggest 2-3 specific, high-quality Indian stocks across various sectors to invest in.
+4. Company Outlook: Briefly explain how these suggested companies are performing and what their future outlook is.
+
+Format the response clearly with line breaks and bullet points.`;
         
         const apiKey = process.env.GEMINI_API_KEY.trim();
         
@@ -188,12 +197,12 @@ module.exports = async (req, res) => {
 
         const result = await model.generateContent({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 100 }
+          generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
         });
 
         const text = result.response.text();
         if (text) {
-          aiInsight = text.replace(/\n/g, ' ');
+          aiInsight = text;
         } else {
           aiInsight = "API Error: No response generated from Gemini SDK.";
         }

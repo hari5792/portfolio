@@ -612,11 +612,11 @@ function App() {
                 <div className="mt-4 p-4 rounded-xl border border-purple-500/30 bg-gradient-to-r from-purple-900/20 to-slate-900 relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-1 h-full bg-purple-500"></div>
                   <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
-                    <span className="text-purple-400">✨ AI Reinvestment Strategy</span>
+                    <span className="text-purple-400">✨ AI Reinvestment Strategy & Portfolio Analysis</span>
                   </h3>
-                  <p className="text-sm text-slate-300 leading-relaxed italic">
-                    "{reinvestOpportunities.aiInsight}"
-                  </p>
+                  <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">
+                    {reinvestOpportunities.aiInsight}
+                  </div>
                 </div>
               ) : (
                 <div className="mt-4 p-4 rounded-xl border border-slate-700/50 bg-slate-900/50 relative overflow-hidden">
