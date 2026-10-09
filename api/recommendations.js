@@ -178,7 +178,7 @@ module.exports = async (req, res) => {
         const prompt = `You are an expert wealth manager. The user's top holdings are: ${topHoldings.join(', ')}. They have 0% exposure to these sectors: ${missingSectors.join(', ')}. Provide a concise 2-3 sentence strategic advice on how they should reinvest their next capital injection to balance this portfolio. Focus on macro allocation. Keep it professional, direct, and under 50 words.`;
         
         const apiKey = process.env.GEMINI_API_KEY.trim();
-        const aiResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
+        const aiResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
