@@ -179,8 +179,30 @@ module.exports = async (req, res) => {
         const prompt = `You are an expert wealth manager. The user's top holdings are: ${topHoldings.join(', ')}. They have 0% exposure to these sectors: ${missingSectors.join(', ')}. Provide a concise 2-3 sentence strategic advice on how they should reinvest their next capital injection to balance this portfolio. Focus on macro allocation. Keep it professional, direct, and under 50 words.`;
         
         const apiKey = process.env.GEMINI_API_KEY.trim();
+        
+        // 5a. DYNAMICALLY DISCOVER SUPPORTED MODEL FOR THIS SPECIFIC API KEY
+        let targetModelStr = "gemini-1.5-flash"; // Fallback
+        try {
+          const modelsResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+          if (modelsResp.ok) {
+            const modelsData = await modelsResp.json();
+            if (modelsData && modelsData.models) {
+              const validModel = modelsData.models.find(m => 
+                m.name.includes('gemini') && 
+                m.supportedGenerationMethods && 
+                m.supportedGenerationMethods.includes('generateContent')
+              );
+              if (validModel) {
+                targetModelStr = validModel.name.replace('models/', '');
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Model Discovery Error:", e.message);
+        }
+
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getModel ? genAI.getModel("gemini-1.5-flash") : genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getModel ? genAI.getModel(targetModelStr) : genAI.getGenerativeModel({ model: targetModelStr });
 
         const result = await model.generateContent({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -194,7 +216,7 @@ module.exports = async (req, res) => {
           aiInsight = "API Error: No response generated from Gemini SDK.";
         }
       } catch(e) {
-        aiInsight = `API Key Error: Gemini SDK failed to connect. Please verify your API key is valid. (Error: ${e.message})`;
+        aiInsight = `API Key Error: Gemini SDK failed. Please verify your API key is valid. (Error: ${e.message})`;
         console.error("AI Insight Error:", e.message);
       }
     }
