@@ -92,7 +92,8 @@ function App() {
   const [reinvestOpportunities, setReinvestOpportunities] = useState({
     averageDownCandidates: [],
     sectorGaps: [],
-    externalIdeas: window.EXTERNAL_RECOMMENDATIONS || []
+    externalIdeas: window.EXTERNAL_RECOMMENDATIONS || [],
+    aiInsight: null
   });
 
   // Only fetch macro recommendations when the actual portfolio composition changes, not on every live price tick
@@ -120,7 +121,8 @@ function App() {
           setReinvestOpportunities({
             averageDownCandidates: result.averageDownCandidates || [],
             sectorGaps: result.sectorGaps || [],
-            externalIdeas: result.externalIdeas || []
+            externalIdeas: result.externalIdeas || [],
+            aiInsight: result.aiInsight || null
           });
         } else {
           showNotification('Warning: Live Market API is unavailable (Vercel Authentication Protected). Using local offline mode.', 'error');
@@ -605,6 +607,18 @@ function App() {
               <p className="text-sm text-slate-400">
                 Discover smart avenues to deploy additional capital: Short-term tactical picks, long-term compounders, and dip averaging opportunities.
               </p>
+
+              {reinvestOpportunities.aiInsight && (
+                <div className="mt-4 p-4 rounded-xl border border-purple-500/30 bg-gradient-to-r from-purple-900/20 to-slate-900 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-purple-500"></div>
+                  <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
+                    <span className="text-purple-400">✨ AI Reinvestment Strategy</span>
+                  </h3>
+                  <p className="text-sm text-slate-300 leading-relaxed italic">
+                    "{reinvestOpportunities.aiInsight}"
+                  </p>
+                </div>
+              )}
 
               <div className="flex items-center gap-3 mt-6 flex-wrap">
                 <button

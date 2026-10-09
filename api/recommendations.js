@@ -166,6 +166,35 @@ module.exports = async (req, res) => {
       }
     });
 
+    // 5. AI PORTFOLIO INSIGHT (If Gemini API Key is provided)
+    let aiInsight = null;
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        const topHoldings = holdings
+          .sort((a, b) => (b.qty * (b.ltp || b.avgCost)) - (a.qty * (a.ltp || a.avgCost)))
+          .slice(0, 6)
+          .map(h => `${h.symbol} (${h.sector})`);
+        
+        const prompt = `You are an expert wealth manager. The user's top holdings are: ${topHoldings.join(', ')}. They have 0% exposure to these sectors: ${missingSectors.join(', ')}. Provide a concise 2-3 sentence strategic advice on how they should reinvest their next capital injection to balance this portfolio. Focus on macro allocation. Keep it professional, direct, and under 50 words.`;
+        
+        const aiResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 100 }
+          })
+        });
+        
+        if (aiResp.ok) {
+          const aiJson = await aiResp.json();
+          aiInsight = aiJson.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/\n/g, ' ') || null;
+        }
+      } catch(e) {
+        console.error("AI Insight Error:", e.message);
+      }
+    }
+
     return res.status(200).json({
       success: true,
       mode: '100% Pure Dynamic Ticker Discovery API',
@@ -174,7 +203,8 @@ module.exports = async (req, res) => {
       underweightedSectors: underweightedSectors,
       averageDownCandidates: averageDownCandidates.sort((a, b) => a.pnlPercent - b.pnlPercent),
       sectorGaps: missingSectors,
-      externalIdeas: dynamicRecommendations.sort((a, b) => b.priorityScore - a.priorityScore)
+      externalIdeas: dynamicRecommendations.sort((a, b) => b.priorityScore - a.priorityScore),
+      aiInsight: aiInsight
     });
   } catch (err) {
     console.error('[Dynamic Recommendation API Error]:', err.message);
