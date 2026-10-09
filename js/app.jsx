@@ -95,6 +95,12 @@ function App() {
     externalIdeas: window.EXTERNAL_RECOMMENDATIONS || []
   });
 
+  // Only fetch macro recommendations when the actual portfolio composition changes, not on every live price tick
+  const holdingsCompositionStr = useMemo(() => {
+    if (!holdings) return '';
+    return holdings.map(h => `${h.symbol}-${h.qty}-${h.avgCost}`).join('|');
+  }, [holdings]);
+
   useEffect(() => {
     if (!holdings || holdings.length === 0) {
       setReinvestOpportunities({ averageDownCandidates: [], sectorGaps: [], externalIdeas: window.EXTERNAL_RECOMMENDATIONS || [] });
@@ -126,8 +132,10 @@ function App() {
       }
     };
     
-    fetchRecommendations();
-  }, [holdings]);
+    // Use a small debounce just in case
+    const timer = setTimeout(fetchRecommendations, 500);
+    return () => clearTimeout(timer);
+  }, [holdingsCompositionStr]); // <-- Optimized: Only runs when actual portfolio composition changes
 
   const sectorDistribution = useMemo(() => {
     return window.PortfolioAnalytics.getSectorDistribution(holdings);

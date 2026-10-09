@@ -288,21 +288,33 @@
     return String(val).replace(/[₹,%\s]/g, '').trim();
   }
 
+  const sectorMap = {
+    'RELIANCE': 'Energy & Oil', 'BPCL': 'Energy & Oil', 'IOC': 'Energy & Oil', 'ONGC': 'Energy & Oil', 'GAIL': 'Energy & Oil', 'HINDPETRO': 'Energy & Oil',
+    'TCS': 'IT & Software', 'INFY': 'IT & Software', 'WIPRO': 'IT & Software', 'HCLTECH': 'IT & Software', 'TECHM': 'IT & Software', 'LTIM': 'IT & Software', 'PERSISTENT': 'IT & Software', 'COFORGE': 'IT & Software', 'OFSS': 'IT & Software',
+    'HDFCBANK': 'Banking & Financials', 'ICICIBANK': 'Banking & Financials', 'SBIN': 'Banking & Financials', 'KOTAKBANK': 'Banking & Financials', 'AXISBANK': 'Banking & Financials', 'INDUSINDBK': 'Banking & Financials', 'FEDERALBNK': 'Banking & Financials', 'BANKBARODA': 'Banking & Financials', 'YESBANK': 'Banking & Financials', 'IDFCFIRSTB': 'Banking & Financials', 'KTKBANK': 'Banking & Financials', 'SOUTHBANK': 'Banking & Financials', 'MANAPPURAM': 'Banking & Financials', 'BAJAJHFL': 'Banking & Financials',
+    'TATAMOTORS': 'Automobile & EV', 'M&M': 'Automobile & EV', 'MARUTI': 'Automobile & EV', 'HEROMOTOCO': 'Automobile & EV', 'EICHERMOT': 'Automobile & EV', 'BAJAJ-AUTO': 'Automobile & EV', 'ASHOKLEY': 'Automobile & EV', 'TVSMOTOR': 'Automobile & EV', 'TMCV': 'Automobile & EV', 'TMPV': 'Automobile & EV',
+    'SUZLON': 'Renewable Energy', 'TATAPOWER': 'Renewable Energy', 'NTPC': 'Renewable Energy', 'POWERGRID': 'Renewable Energy', 'ADANIPOWER': 'Renewable Energy', 'IREDA': 'Renewable Energy', 'NHPC': 'Renewable Energy', 'JSWENERGY': 'Renewable Energy',
+    'HAL': 'Defence & Aerospace', 'BEL': 'Defence & Aerospace', 'BDL': 'Defence & Aerospace', 'MAZDOCK': 'Defence & Aerospace', 'COCHINSHIP': 'Defence & Aerospace', 'DATA-PATTERNS': 'Defence & Aerospace',
+    'ITC': 'FMCG', 'HINDUNILVR': 'FMCG', 'NESTLEIND': 'FMCG', 'BRITANNIA': 'FMCG', 'TATACONSUM': 'FMCG', 'DABUR': 'FMCG', 'MARICO': 'FMCG', 'GODREJCP': 'FMCG',
+    'PAYTM': 'Fintech & Digital', 'POLICYBZR': 'Fintech & Digital', 'NYKAA': 'Fintech & Digital', 'ZOMATO': 'Fintech & Digital', 'DELHIVERY': 'Fintech & Digital', 'GROWW': 'Fintech & Digital',
+    'SUNPHARMA': 'Pharma & Healthcare', 'DRREDDY': 'Pharma & Healthcare', 'CIPLA': 'Pharma & Healthcare', 'APOLLOHOSP': 'Pharma & Healthcare', 'DIVISLAB': 'Pharma & Healthcare', 'MANKIND': 'Pharma & Healthcare', 'LUPIN': 'Pharma & Healthcare',
+    'TATASTEEL': 'Metals & Mining', 'JINDALSTEL': 'Metals & Mining', 'HINDALCO': 'Metals & Mining', 'SAIL': 'Metals & Mining', 'NATIONALUM': 'Metals & Mining', 'VEDL': 'Metals & Mining',
+    'LT': 'Infrastructure & Capital Goods', 'ULTRACETCO': 'Infrastructure & Capital Goods', 'GRASIM': 'Infrastructure & Capital Goods', 'SIEMENS': 'Infrastructure & Capital Goods', 'ABB': 'Infrastructure & Capital Goods', 'ADANIENT': 'Infrastructure & Capital Goods', 'PNCINFRA': 'Infrastructure & Capital Goods'
+  };
+
+  const marketCapMap = {
+    'RELIANCE': 'Large Cap', 'TCS': 'Large Cap', 'HDFCBANK': 'Large Cap', 'ICICIBANK': 'Large Cap', 'INFY': 'Large Cap', 'BHARTIARTL': 'Large Cap', 'ITC': 'Large Cap', 'SBIN': 'Large Cap', 'LTIM': 'Large Cap', 'TATAMOTORS': 'Large Cap', 'HINDUNILVR': 'Large Cap', 'BAJFINANCE': 'Large Cap', 'HAL': 'Large Cap', 'LT': 'Large Cap', 'SUNPHARMA': 'Large Cap', 'AXISBANK': 'Large Cap', 'MARUTI': 'Large Cap', 'NTPC': 'Large Cap', 'ONGC': 'Large Cap', 'KOTAKBANK': 'Large Cap', 'TATASTEEL': 'Large Cap',
+    'SUZLON': 'Mid Cap', 'PAYTM': 'Mid Cap', 'YESBANK': 'Mid Cap', 'YES BANK': 'Mid Cap', 'POLYCAB': 'Mid Cap', 'IRFC': 'Mid Cap', 'RVNL': 'Mid Cap', 'FEDERALBNK': 'Mid Cap', 'PERSISTENT': 'Mid Cap', 'COFORGE': 'Mid Cap', 'KTKBANK': 'Mid Cap', 'MANAPPURAM': 'Mid Cap', 'BAJAJHFL': 'Mid Cap'
+  };
+
+  function getBaseSymbol(symbol) {
+    return symbol.toUpperCase().split('-')[0].split('.')[0].trim();
+  }
+
   function categorizeStockSector(symbol) {
-    const sym = symbol.toUpperCase();
-    if (['RELIANCE', 'BPCL', 'IOC', 'ONGC', 'GAIL', 'HINDPETRO'].some(s => sym.includes(s))) return 'Energy & Oil';
-    if (['TCS', 'INFY', 'WIPRO', 'HCLTECH', 'TECHM', 'LTIM', 'PERSISTENT', 'COFORGE', 'OFSS'].some(s => sym.includes(s))) return 'IT & Software';
-    if (['HDFCBANK', 'ICICIBANK', 'SBIN', 'KOTAKBANK', 'AXISBANK', 'INDUSINDBK', 'FEDERALBNK', 'BANKBARODA', 'YESBANK', 'IDFCFIRSTB', 'KTKBANK', 'SOUTHBANK', 'MANAPPURAM', 'BAJAJHFL'].some(s => sym.includes(s))) return 'Banking & Financials';
-    if (['TATAMOTORS', 'M&M', 'MARUTI', 'HEROMOTOCO', 'EICHERMOT', 'BAJAJ-AUTO', 'ASHOKLEY', 'TVSMOTOR', 'TMCV', 'TMPV'].some(s => sym.includes(s))) return 'Automobile & EV';
-    if (['SUZLON', 'TATAPOWER', 'NTPC', 'POWERGRID', 'ADANIPOWER', 'IREDA', 'NHPC', 'JSWENERGY'].some(s => sym.includes(s))) return 'Renewable Energy';
-    if (['HAL', 'BEL', 'BDL', 'MAZDOCK', 'COCHINSHIP', 'DATA-PATTERNS'].some(s => sym.includes(s))) return 'Defence & Aerospace';
-    if (['ITC', 'HINDUNILVR', 'NESTLEIND', 'BRITANNIA', 'TATACONSUM', 'DABUR', 'MARICO', 'GODREJCP'].some(s => sym.includes(s))) return 'FMCG';
-    if (['PAYTM', 'POLICYBZR', 'NYKAA', 'ZOMATO', 'DELHIVERY', 'GROWW'].some(s => sym.includes(s))) return 'Fintech & Digital';
-    if (['SUNPHARMA', 'DRREDDY', 'CIPLA', 'APOLLOHOSP', 'DIVISLAB', 'MANKIND', 'LUPIN'].some(s => sym.includes(s))) return 'Pharma & Healthcare';
-    if (['TATASTEEL', 'JINDALSTEL', 'HINDALCO', 'SAIL', 'NATIONALUM', 'VEDL'].some(s => sym.includes(s))) return 'Metals & Mining';
-    if (['GOLDBEES', 'GOLDCASE', 'ITBEES', 'MON100', 'BEES', 'ETF'].some(s => sym.includes(s))) return 'Index & Commodity ETF';
-    if (['LT', 'ULTRACETCO', 'GRASIM', 'SIEMENS', 'ABB', 'ADANIENT', 'PNCINFRA'].some(s => sym.includes(s))) return 'Infrastructure & Capital Goods';
-    return 'Other Stocks';
+    const sym = getBaseSymbol(symbol);
+    if (sym.includes('BEES') || sym.includes('ETF') || sym === 'MON100' || sym === 'GOLDCASE') return 'Index & Commodity ETF';
+    return sectorMap[sym] || 'Other Stocks';
   }
 
   function categorizeMFSector(name) {
@@ -316,11 +328,7 @@
   }
 
   function estimateMarketCap(symbol) {
-    const sym = symbol.toUpperCase();
-    const largeCaps = ['RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY', 'BHARTIARTL', 'ITC', 'SBIN', 'LTIM', 'TATAMOTORS', 'HINDUNILVR', 'BAJFINANCE', 'HAL', 'LT', 'SUNPHARMA', 'AXISBANK', 'MARUTI', 'NTPC', 'ONGC', 'KOTAKBANK', 'TATASTEEL'];
-    if (largeCaps.some(s => sym.includes(s))) return 'Large Cap';
-    const midCaps = ['SUZLON', 'PAYTM', 'YESBANK', 'YES BANK', 'POLYCAB', 'IRFC', 'RVNL', 'FEDERALBNK', 'PERSISTENT', 'COFORGE', 'KTKBANK', 'MANAPPURAM', 'BAJAJHFL'];
-    if (midCaps.some(s => sym.includes(s))) return 'Mid Cap';
-    return 'Small / Micro Cap';
+    const sym = getBaseSymbol(symbol);
+    return marketCapMap[sym] || 'Small / Micro Cap';
   }
 })();
