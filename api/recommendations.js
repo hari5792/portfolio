@@ -180,26 +180,8 @@ module.exports = async (req, res) => {
         
         const apiKey = process.env.GEMINI_API_KEY.trim();
         
-        // 5a. DYNAMICALLY DISCOVER SUPPORTED MODEL FOR THIS SPECIFIC API KEY
-        let targetModelStr = "gemini-1.5-flash"; // Fallback
-        try {
-          const modelsResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-          if (modelsResp.ok) {
-            const modelsData = await modelsResp.json();
-            if (modelsData && modelsData.models) {
-              const validModel = modelsData.models.find(m => 
-                m.name.includes('gemini') && 
-                m.supportedGenerationMethods && 
-                m.supportedGenerationMethods.includes('generateContent')
-              );
-              if (validModel) {
-                targetModelStr = validModel.name.replace('models/', '');
-              }
-            }
-          }
-        } catch (e) {
-          console.error("Model Discovery Error:", e.message);
-        }
+        // 5a. Use the latest 2026-era Gemini model explicitly recommended by Google AI Studio
+        const targetModelStr = "gemini-3.8-flash";
 
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getModel ? genAI.getModel(targetModelStr) : genAI.getGenerativeModel({ model: targetModelStr });
