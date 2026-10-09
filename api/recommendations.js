@@ -1,4 +1,5 @@
 // Native fetch is available in Node 18+ (Vercel Default)
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 // 100% PURE DYNAMIC MARKET API RECOMMENDATION ENGINE
 // ZERO HARDCODED STOCK TICKERS (No HAL, LT, NTPC, TCS, etc. written in code)
@@ -178,25 +179,22 @@ module.exports = async (req, res) => {
         const prompt = `You are an expert wealth manager. The user's top holdings are: ${topHoldings.join(', ')}. They have 0% exposure to these sectors: ${missingSectors.join(', ')}. Provide a concise 2-3 sentence strategic advice on how they should reinvest their next capital injection to balance this portfolio. Focus on macro allocation. Keep it professional, direct, and under 50 words.`;
         
         const apiKey = process.env.GEMINI_API_KEY.trim();
-        const aiResp = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 100 }
-          })
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getModel ? genAI.getModel("gemini-1.5-flash") : genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+        const result = await model.generateContent({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 100 }
         });
-        
-        if (aiResp.ok) {
-          const aiJson = await aiResp.json();
-          aiInsight = aiJson.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/\n/g, ' ') || null;
+
+        const text = result.response.text();
+        if (text) {
+          aiInsight = text.replace(/\n/g, ' ');
         } else {
-          const errJson = await aiResp.json().catch(() => ({}));
-          aiInsight = `API Key Error: Gemini rejected the request. Please verify your API key is valid. (Code: ${aiResp.status})`;
-          console.error("Gemini API Error:", aiResp.status, errJson);
+          aiInsight = "API Error: No response generated from Gemini SDK.";
         }
       } catch(e) {
-        aiInsight = `Network Error: Could not connect to Gemini API (${e.message}).`;
+        aiInsight = `API Key Error: Gemini SDK failed to connect. Please verify your API key is valid. (Error: ${e.message})`;
         console.error("AI Insight Error:", e.message);
       }
     }
